@@ -489,6 +489,9 @@
 
             <!-- Quick Viewfinder Optical Tools -->
             <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <button onclick="requestGyroPermission(true)" class="px-2 py-1 rounded-xl bg-zinc-900 border border-zinc-700/80 text-[11px] font-mono text-zinc-300 hover:text-white cursor-pointer" title="Enable Motion Leveler" aria-label="Enable motion leveler">
+                    <i class="fa-solid fa-ruler-horizontal text-[10px]"></i>
+                </button>
                 <button
                     onclick="toggleCameraFullscreen()"
                     id="fullscreen-btn"
@@ -3045,22 +3048,38 @@
         }
 
         function handleDeviceOrientation(event) {
-            if (typeof event.gamma === 'number' && event.gamma !== null) {
-                applyTiltAngle(event.gamma);
-            }
+            if (typeof event.gamma !== 'number') return;
+            const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+            const tilt = isLandscape
+                ? event.gamma - (event.gamma < 0 ? -90 : 90)
+                : event.gamma;
+            applyTiltAngle(tilt);
         }
 
-        async function requestGyroPermission() {
-            if (state.gyroPermissionRequested) return;
-            state.gyroPermissionRequested = true;
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        async function requestGyroPermission(showFeedback = false) {
+            if (state.gyroPermissionRequested) {
+                if (showFeedback) showToast('Motion leveler is enabled');
+                return;
+            }
+            if (typeof DeviceOrientationEvent === 'undefined') {
+                if (showFeedback) showToast('Motion sensors are not supported by this browser');
+                return;
+            }
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                 try {
                     const res = await DeviceOrientationEvent.requestPermission();
-                    if (res === 'granted') {
-                        window.addEventListener('deviceorientation', handleDeviceOrientation);
+                    if (res !== 'granted') {
+                        if (showFeedback) showToast('Allow motion and orientation access to use the leveler');
+                        return;
                     }
-                } catch (e) {}
+                } catch (e) {
+                    if (showFeedback) showToast('Tap Enable Level again to allow motion sensor access');
+                    return;
+                }
             }
+            window.addEventListener('deviceorientation', handleDeviceOrientation);
+            state.gyroPermissionRequested = true;
+            if (showFeedback) showToast('Motion leveler enabled');
         }
 
         function toggleDesktopTiltSim() {
@@ -3625,8 +3644,11 @@
             window.addEventListener('orientationchange', handleOrientationChange);
             handleOrientationChange();
 
-            if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission !== 'function') {
+            if (window.DeviceOrientationEvent
+                && typeof DeviceOrientationEvent.requestPermission !== 'function'
+                && !state.gyroPermissionRequested) {
                 window.addEventListener('deviceorientation', handleDeviceOrientation);
+                state.gyroPermissionRequested = true;
             }
         };
     </script>
