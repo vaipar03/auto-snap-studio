@@ -932,12 +932,15 @@
                 </button>
             </div>
             <div class="p-4 space-y-3">
-                <div class="relative overflow-hidden rounded-xl bg-black aspect-video flex items-center justify-center">
+                <div id="vin-scanner-viewfinder" class="relative overflow-hidden rounded-xl bg-black aspect-video flex items-center justify-center">
                     <video id="vin-scanner-video" class="w-full h-full object-cover" autoplay muted playsinline></video>
                     <div class="absolute inset-5 border-2 border-sky-400/80 rounded-lg pointer-events-none"></div>
+                    <button onclick="switchVinScannerCamera(event)" aria-label="Switch scanner camera" title="Switch between rear and front cameras" class="absolute top-2 right-2 w-9 h-9 rounded-full bg-black/70 border border-white/30 text-white flex items-center justify-center cursor-pointer">
+                        <i class="fa-solid fa-camera-rotate"></i>
+                    </button>
                 </div>
                 <p id="vin-scanner-status" role="status" aria-live="polite" class="min-h-10 text-xs text-zinc-300">Starting camera…</p>
-                <p class="text-[11px] text-zinc-500">Camera scanning requires a secure connection (HTTPS) and browser permission. You can enter the VIN manually instead.</p>
+                <p class="text-[11px] text-zinc-500">Scanning requires HTTPS and camera permission. The rear camera is selected by default; use the camera switch if needed, or enter the VIN manually.</p>
             </div>
             <div class="flex justify-end gap-2 px-4 py-3 border-t border-zinc-800 bg-zinc-950/60">
                 <button onclick="closeVinScanner()" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 cursor-pointer transition">Cancel</button>
@@ -1042,9 +1045,12 @@
             currentTiltDeg: 0,
             gyroPermissionRequested: false,
             lastDecodedVin: '',
-            vinScannerControls: null,
+            vinScannerReader: null,
+            vinScannerStream: null,
             vinScannerLibraryPromise: null,
             vinScannerAttempt: 0,
+            vinScannerFacingMode: 'environment',
+            cameraVideoRotation: 0,
             fullscreenUnavailable: false,
             lightboxPhotoId: null,
             tone: {
@@ -1087,6 +1093,7 @@
                 if (!state.hasLiveCamera) {
                     initCamera();
                 }
+                updateCameraVideoOrientation();
             } else {
                 cameraEl.classList.add('hidden');
                 setupEl.classList.remove('hidden');
@@ -1194,6 +1201,7 @@
         }
 
         function handleOrientationChange() {
+            updateCameraVideoOrientation();
             const isTouchDevice = navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
             if (isTouchDevice && isLandscape && state.currentPage !== 'camera') {
@@ -1494,23 +1502,52 @@
             return '';
         }
 
-        function closeVinScanner(focusVinInput = false) {
-            state.vinScannerAttempt++;
-            const video = document.getElementById('vin-scanner-video');
-            const stream = video.srcObject;
-            if (state.vinScannerControls) {
-                state.vinScannerControls.stop();
-                state.vinScannerControls = null;
-            }
+        function stopVinScannerStream(stream) {
             if (stream && stream.getTracks) {
                 stream.getTracks().forEach((track) => track.stop());
             }
+        }
+
+        function requestVinScannerStream() {
+            return navigator.mediaDevices.getUserMedia({
+                video: {
+                    facingMode: { ideal: state.vinScannerFacingMode },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                },
+                audio: false
+            }).catch((error) => {
+                if (error.name !== 'OverconstrainedError' && error.name !== 'ConstraintNotSatisfiedError') {
+                    throw error;
+                }
+                return navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            });
+        }
+
+        function closeVinScanner(focusVinInput = false) {
+            state.vinScannerAttempt++;
+            const video = document.getElementById('vin-scanner-video');
+            const stream = state.vinScannerStream || video.srcObject;
+            state.vinScannerStream = null;
+            if (state.vinScannerReader) {
+                state.vinScannerReader.stopContinuousDecode();
+                state.vinScannerReader = null;
+            }
+            stopVinScannerStream(stream);
             video.pause();
             video.srcObject = null;
+            applyVideoOrientation(video, document.getElementById('vin-scanner-viewfinder'));
             document.getElementById('vin-scanner-modal').classList.add('hidden');
             if (focusVinInput) {
                 document.getElementById('vin-input').focus();
             }
+        }
+
+        function switchVinScannerCamera(event) {
+            if (event) event.stopPropagation();
+            state.vinScannerFacingMode = state.vinScannerFacingMode === 'environment' ? 'user' : 'environment';
+            closeVinScanner();
+            startVinScanner();
         }
 
         async function startVinScanner() {
@@ -1519,19 +1556,35 @@
             const video = document.getElementById('vin-scanner-video');
             const attempt = ++state.vinScannerAttempt;
             modal.classList.remove('hidden');
-            status.textContent = 'Starting camera…';
+            status.textContent = 'Requesting camera permission…';
 
             if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 status.textContent = 'Camera scanning is unavailable here. Open this page over HTTPS in a supported browser, or enter the VIN manually.';
                 return;
             }
 
+            let scannerStream = null;
+            let streamPromise = null;
             try {
-                await loadVinScannerLibrary();
-                if (attempt !== state.vinScannerAttempt) return;
+                streamPromise = requestVinScannerStream().then((stream) => {
+                    scannerStream = stream;
+                    if (attempt !== state.vinScannerAttempt) {
+                        stopVinScannerStream(stream);
+                    } else {
+                        state.vinScannerStream = stream;
+                    }
+                    return stream;
+                });
+                const [stream] = await Promise.all([streamPromise, loadVinScannerLibrary()]);
+                if (attempt !== state.vinScannerAttempt) {
+                    stopVinScannerStream(stream);
+                    if (state.vinScannerStream === stream) state.vinScannerStream = null;
+                    return;
+                }
 
                 const reader = new window.ZXing.BrowserMultiFormatReader();
-                const controls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
+                state.vinScannerReader = reader;
+                await reader.decodeFromStream(stream, video, (result) => {
                     if (!result || attempt !== state.vinScannerAttempt) return;
                     const vin = getVinFromBarcode(result.getText());
                     if (!vin) {
@@ -1547,13 +1600,32 @@
                 });
 
                 if (attempt !== state.vinScannerAttempt) {
-                    controls.stop();
+                    reader.stopContinuousDecode();
+                    stopVinScannerStream(stream);
+                    if (state.vinScannerStream === stream) state.vinScannerStream = null;
                     return;
                 }
-                state.vinScannerControls = controls;
-                status.textContent = 'Point the camera at a VIN barcode or QR code.';
+                updateCameraVideoOrientation();
+                status.textContent = `Point the ${state.vinScannerFacingMode === 'environment' ? 'rear' : 'front'} camera at a VIN barcode or QR code.`;
             } catch (error) {
+                if (attempt === state.vinScannerAttempt && state.vinScannerReader) {
+                    state.vinScannerReader.stopContinuousDecode();
+                    state.vinScannerReader = null;
+                }
+                if (scannerStream) {
+                    stopVinScannerStream(scannerStream);
+                    if (state.vinScannerStream === scannerStream) state.vinScannerStream = null;
+                }
+                else if (streamPromise) {
+                    streamPromise.then((stream) => {
+                        stopVinScannerStream(stream);
+                        if (state.vinScannerStream === stream) state.vinScannerStream = null;
+                    }, () => {});
+                }
                 if (attempt !== state.vinScannerAttempt) return;
+                state.vinScannerStream = null;
+                video.pause();
+                video.srcObject = null;
                 const name = error && error.name;
                 if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
                     status.textContent = 'Camera permission was denied or blocked. Allow camera access in your browser settings, or enter the VIN manually.';
@@ -1561,6 +1633,8 @@
                     status.textContent = 'No camera was found. Connect a camera or enter the VIN manually.';
                 } else if (name === 'NotReadableError' || name === 'TrackStartError') {
                     status.textContent = 'The camera is busy or unavailable. Close other apps using it, or enter the VIN manually.';
+                } else if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
+                    status.textContent = 'No compatible camera could be selected. Switch cameras or enter the VIN manually.';
                 } else {
                     status.textContent = 'Could not start barcode scanning. Check your connection and camera permission, or enter the VIN manually.';
                 }
@@ -1885,6 +1959,7 @@
                 video.srcObject = stream;
                 video.classList.remove('hidden');
                 fallback.classList.add('hidden');
+                updateCameraVideoOrientation();
                 applyContinuousAutoFocus();
             } catch (err) {
                 state.hasLiveCamera = false;
@@ -1897,6 +1972,64 @@
             state.facingMode = state.facingMode === 'environment' ? 'user' : 'environment';
             initCamera();
             showToast(state.facingMode === 'environment' ? 'Switched to Rear Camera' : 'Switched to Front Camera');
+        }
+
+        function getLandscapeVideoRotation() {
+            const angle = screen.orientation
+                ? screen.orientation.angle
+                : (window.orientation || 90);
+            return angle === 270 || angle === -90 ? 90 : -90;
+        }
+
+        function applyVideoOrientation(video, wrapper) {
+            if (!video || !wrapper || !video.videoWidth || !video.videoHeight) return 0;
+            const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+            const needsRotation = isLandscape && video.videoHeight > video.videoWidth;
+            if (!needsRotation) {
+                video.style.width = '';
+                video.style.height = '';
+                video.style.maxWidth = '';
+                video.style.flex = '';
+                video.style.transform = '';
+                return 0;
+            }
+
+            const bounds = wrapper.getBoundingClientRect();
+            video.style.width = `${bounds.height}px`;
+            video.style.height = `${bounds.width}px`;
+            video.style.maxWidth = 'none';
+            video.style.flex = 'none';
+            const rotation = getLandscapeVideoRotation();
+            video.style.transform = `rotate(${rotation}deg)`;
+            video.style.transformOrigin = 'center center';
+            return rotation;
+        }
+
+        function updateCameraVideoOrientation() {
+            const cameraVideo = document.getElementById('camera-video');
+            const viewfinder = document.getElementById('viewfinder-wrapper');
+            state.cameraVideoRotation = applyVideoOrientation(cameraVideo, viewfinder);
+            applyVideoOrientation(
+                document.getElementById('vin-scanner-video'),
+                document.getElementById('vin-scanner-viewfinder')
+            );
+        }
+
+        function getOrientedCameraFrame(video, rotation) {
+            if (!rotation) {
+                return { source: video, width: video.videoWidth, height: video.videoHeight };
+            }
+
+            const width = video.videoWidth;
+            const height = video.videoHeight;
+            const frame = document.createElement('canvas');
+            frame.width = height;
+            frame.height = width;
+            const ctx = frame.getContext('2d');
+            ctx.translate(frame.width / 2, frame.height / 2);
+            ctx.rotate(rotation * Math.PI / 180);
+            ctx.drawImage(video, -width / 2, -height / 2, width, height);
+            return { source: frame, width: frame.width, height: frame.height };
         }
 
         async function applyContinuousAutoFocus(pointOfInterest) {
@@ -2839,12 +2972,13 @@
             let height = 960;
 
             if (state.hasLiveCamera && video.videoWidth > 0) {
-                width = video.videoWidth;
-                height = video.videoHeight;
+                const frame = getOrientedCameraFrame(video, state.cameraVideoRotation);
+                width = frame.width;
+                height = frame.height;
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
-                drawWithToneFallback(ctx, video, width, height);
+                drawWithToneFallback(ctx, frame.source, width, height);
                 drawWatermarkAndMetadata(ctx, width, height, effectiveLabel);
             } else {
                 canvas.width = width;
@@ -3820,6 +3954,12 @@
             document.addEventListener('fullscreenchange', updateFullscreenButton);
             document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
             updateFullscreenButton();
+            document.getElementById('camera-video').addEventListener('loadedmetadata', updateCameraVideoOrientation);
+            document.getElementById('camera-video').addEventListener('resize', updateCameraVideoOrientation);
+            document.getElementById('vin-scanner-video').addEventListener('loadedmetadata', updateCameraVideoOrientation);
+            document.getElementById('vin-scanner-video').addEventListener('resize', updateCameraVideoOrientation);
+            window.addEventListener('resize', updateCameraVideoOrientation);
+            window.addEventListener('orientationchange', updateCameraVideoOrientation);
             const orientationQuery = window.matchMedia('(orientation: landscape)');
             if (orientationQuery.addEventListener) {
                 orientationQuery.addEventListener('change', handleOrientationChange);
