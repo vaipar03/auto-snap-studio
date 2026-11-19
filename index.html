@@ -489,6 +489,15 @@
 
             <!-- Quick Viewfinder Optical Tools -->
             <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                <button
+                    onclick="toggleCameraFullscreen()"
+                    id="fullscreen-btn"
+                    class="px-2 py-1 rounded-xl bg-zinc-900 border border-zinc-700/80 text-[11px] font-mono text-zinc-300 hover:text-white cursor-pointer flex items-center gap-1"
+                    title="Toggle Full Screen"
+                    aria-label="Enter full screen"
+                >
+                    <i class="fa-solid fa-expand text-[10px]"></i>
+                </button>
                 <button onclick="triggerAutoFocusCenter()" id="af-status-btn" class="px-2 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-[11px] font-mono text-emerald-300 hover:text-white cursor-pointer flex items-center gap-1" title="Auto-Focus Lock">
                     <i class="fa-solid fa-crosshairs text-[10px]"></i>
                     <span>AF</span>
@@ -1037,7 +1046,7 @@
         /* ============================================================================
            2. 2-PAGE NAVIGATION CONTROLLER (PAGE 1: SETUP/GALLERY <-> PAGE 2: CAMERA)
         ============================================================================ */
-        function switchPage(targetPage, scrollToGallery = false) {
+        function switchPage(targetPage, scrollToGallery = false, requestFullscreen = true) {
             state.currentPage = targetPage;
             document.body.dataset.page = targetPage;
 
@@ -1050,6 +1059,7 @@
                 syncVehicleBanner(Boolean(state.lastDecodedVin));
                 renderStepper();
                 renderOverlay();
+                if (requestFullscreen) requestCameraFullscreen();
                 if (!state.hasLiveCamera) {
                     initCamera();
                 }
@@ -1061,6 +1071,61 @@
                     const gal = document.getElementById('setup-gallery-section');
                     if (gal) gal.scrollIntoView({ behavior: 'smooth' });
                 }
+            }
+        }
+
+        function requestCameraFullscreen(showFeedback = false) {
+            const cameraEl = document.getElementById('page-camera');
+            const requestFullscreen = cameraEl.requestFullscreen || cameraEl.webkitRequestFullscreen;
+            if (!requestFullscreen) {
+                if (showFeedback) showToast('Full screen is not supported by this browser');
+                return;
+            }
+
+            try {
+                const result = requestFullscreen.call(cameraEl);
+                if (result && typeof result.catch === 'function') {
+                    result.catch(() => {
+                        if (showFeedback) showToast('Could not enter full screen — tap the expand button to try again');
+                    });
+                }
+            } catch (err) {
+                if (showFeedback) showToast('Could not enter full screen — tap the expand button to try again');
+            }
+        }
+
+        function toggleCameraFullscreen() {
+            const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+            if (isFullscreen) {
+                const exitFullscreen = document.exitFullscreen || document.webkitExitFullscreen;
+                if (exitFullscreen) {
+                    const result = exitFullscreen.call(document);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(() => showToast('Could not exit full screen'));
+                    }
+                }
+                return;
+            }
+
+            requestCameraFullscreen(true);
+        }
+
+        function updateFullscreenButton() {
+            const button = document.getElementById('fullscreen-btn');
+            if (!button) return;
+            const isFullscreen = document.fullscreenElement === document.getElementById('page-camera')
+                || document.webkitFullscreenElement === document.getElementById('page-camera');
+            button.innerHTML = `<i class="fa-solid ${isFullscreen ? 'fa-compress' : 'fa-expand'} text-[10px]"></i>`;
+            button.setAttribute('aria-label', isFullscreen ? 'Exit full screen' : 'Enter full screen');
+            button.title = isFullscreen ? 'Exit Full Screen' : 'Toggle Full Screen';
+        }
+
+        function handleOrientationChange() {
+            const isTouchDevice = navigator.maxTouchPoints > 0;
+            const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+            if (isTouchDevice && isLandscape && state.currentPage !== 'camera') {
+                switchPage('camera', false, false);
+                showToast('Landscape detected — tap expand if browser bars remain');
             }
         }
 
@@ -3549,6 +3614,16 @@
             renderGallery();
             applyLiveToneFilter();
             initMovableShutter();
+            document.addEventListener('fullscreenchange', updateFullscreenButton);
+            document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+            const orientationQuery = window.matchMedia('(orientation: landscape)');
+            if (orientationQuery.addEventListener) {
+                orientationQuery.addEventListener('change', handleOrientationChange);
+            } else if (orientationQuery.addListener) {
+                orientationQuery.addListener(handleOrientationChange);
+            }
+            window.addEventListener('orientationchange', handleOrientationChange);
+            handleOrientationChange();
 
             if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission !== 'function') {
                 window.addEventListener('deviceorientation', handleDeviceOrientation);
