@@ -159,7 +159,7 @@
                     </span>
                 </div>
 
-                <!-- Stock # + 17-Char VIN + Sample + Decode -->
+                <!-- Stock # + 17-Char VIN + Scanner + Decode -->
                 <div class="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
                     <div class="sm:col-span-3">
                         <label for="stock-input" class="block text-[11px] font-semibold text-zinc-400 mb-1">Stock #</label>
@@ -192,12 +192,12 @@
                             </div>
 
                             <button
-                                onclick="loadSampleVin()"
-                                class="shrink-0 px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold text-amber-300 transition cursor-pointer flex items-center gap-1.5"
-                                title="Cycle & Auto-Decode Sample VINs"
+                                onclick="startVinScanner()"
+                                class="shrink-0 px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-semibold text-sky-300 transition cursor-pointer flex items-center gap-1.5"
+                                title="Scan a VIN barcode or QR code"
                             >
-                                <i class="fa-solid fa-bolt text-[11px]"></i>
-                                <span>Sample VIN</span>
+                                <i class="fa-solid fa-barcode text-[11px]"></i>
+                                <span>Scan VIN</span>
                             </button>
 
                             <button
@@ -251,7 +251,7 @@
                 <div id="decoded-banner" class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-zinc-950 border border-zinc-800 text-xs">
                     <div class="flex items-center gap-2 min-w-0">
                         <i id="vin-status-icon" class="fa-solid fa-car text-zinc-500 text-xs shrink-0"></i>
-                        <span id="decoded-banner-text" class="font-semibold text-zinc-400 truncate">Ready — Enter 17-char VIN or tap Sample VIN</span>
+                        <span id="decoded-banner-text" class="font-semibold text-zinc-400 truncate">Ready — Enter or scan a 17-char VIN</span>
                     </div>
                     <button
                         onclick="enableAutoShapeProfile(true)"
@@ -920,6 +920,32 @@
         </div>
     </div>
 
+    <div id="vin-scanner-modal" onclick="closeVinScanner()" class="hidden fixed inset-0 z-[60] bg-black/90 backdrop-blur-md flex items-center justify-center p-3 sm:p-6" role="dialog" aria-modal="true" aria-labelledby="vin-scanner-title">
+        <div onclick="event.stopPropagation()" class="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
+            <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-800 bg-zinc-950/60">
+                <div>
+                    <h3 id="vin-scanner-title" class="text-sm font-bold text-white">Scan VIN Barcode or QR Code</h3>
+                    <p class="text-[11px] text-zinc-400">Allow camera access and hold the code in view</p>
+                </div>
+                <button onclick="closeVinScanner()" aria-label="Close VIN scanner" class="w-8 h-8 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 flex items-center justify-center cursor-pointer transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-3">
+                <div class="relative overflow-hidden rounded-xl bg-black aspect-video flex items-center justify-center">
+                    <video id="vin-scanner-video" class="w-full h-full object-cover" autoplay muted playsinline></video>
+                    <div class="absolute inset-5 border-2 border-sky-400/80 rounded-lg pointer-events-none"></div>
+                </div>
+                <p id="vin-scanner-status" role="status" aria-live="polite" class="min-h-10 text-xs text-zinc-300">Starting camera…</p>
+                <p class="text-[11px] text-zinc-500">Camera scanning requires a secure connection (HTTPS) and browser permission. You can enter the VIN manually instead.</p>
+            </div>
+            <div class="flex justify-end gap-2 px-4 py-3 border-t border-zinc-800 bg-zinc-950/60">
+                <button onclick="closeVinScanner()" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 cursor-pointer transition">Cancel</button>
+                <button onclick="closeVinScanner(true)" class="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white cursor-pointer transition">Enter VIN Manually</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         /* ============================================================================
            1. SHOT POSITIONS, SUB-ANGLES & APPLICATION STATE
@@ -985,18 +1011,10 @@
             { id: 'extra_detail', category: 'extra', label: '+ Extra Detail', slug: 'Extra_Detail', type: 'extra_macro', isExtra: true }
         ];
 
-        const SAMPLE_VINS = [
-            '1FTFW1E84MFA12345', // Ford F-150 Pickup
-            '1HGCV1F34LA012345', // Honda Accord Sedan
-            '5UXCR6C05M9D12345', // BMW X5 SUV
-            '1FA6P8CF5M5102345', // Ford Mustang Convertible
-            'WVWZZZAUZHW123456', // VW Golf GTI Hatchback
-            'YV1102AK5M1123456'  // Volvo V60 Wagon
-        ];
-
         const STORAGE_LOGO_KEY = 'autosnap_dealership_logo_v2';
         const STORAGE_DRIVE_KEY = 'autosnap_drive_config';
         const STORAGE_SHUTTER_POS_KEY = 'autosnap_shutter_pos_v1';
+        const VIN_SCANNER_SCRIPT_URL = 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js';
 
         let state = {
             currentPage: 'setup',
@@ -1024,7 +1042,10 @@
             currentTiltDeg: 0,
             gyroPermissionRequested: false,
             lastDecodedVin: '',
-            sampleIndex: 0,
+            vinScannerControls: null,
+            vinScannerLibraryPromise: null,
+            vinScannerAttempt: 0,
+            fullscreenUnavailable: false,
             lightboxPhotoId: null,
             tone: {
                 preset: 'auto_lot',
@@ -1077,10 +1098,24 @@
             }
         }
 
+        function getCameraFullscreenMethod(cameraEl = document.getElementById('page-camera')) {
+            if (cameraEl.requestFullscreen && document.fullscreenEnabled !== false) {
+                return cameraEl.requestFullscreen;
+            }
+            if (cameraEl.webkitRequestFullscreen && document.webkitFullscreenEnabled !== false) {
+                return cameraEl.webkitRequestFullscreen;
+            }
+            return null;
+        }
+
+        function canRequestCameraFullscreen() {
+            return !state.fullscreenUnavailable && Boolean(getCameraFullscreenMethod());
+        }
+
         function requestCameraFullscreen(showFeedback = false) {
             const cameraEl = document.getElementById('page-camera');
-            const requestFullscreen = cameraEl.requestFullscreen || cameraEl.webkitRequestFullscreen;
-            if (!requestFullscreen) {
+            const requestFullscreen = getCameraFullscreenMethod(cameraEl);
+            if (!canRequestCameraFullscreen() || !requestFullscreen) {
                 if (showFeedback) showToast(getFullscreenHelpMessage());
                 return;
             }
@@ -1089,10 +1124,18 @@
                 const result = requestFullscreen.call(cameraEl);
                 if (result && typeof result.catch === 'function') {
                     result.catch(() => {
+                        if (isAppleMobileDevice() && isStandaloneApp()) {
+                            state.fullscreenUnavailable = true;
+                            updateFullscreenButton();
+                        }
                         if (showFeedback) showToast(getFullscreenHelpMessage());
                     });
                 }
             } catch (err) {
+                if (isAppleMobileDevice() && isStandaloneApp()) {
+                    state.fullscreenUnavailable = true;
+                    updateFullscreenButton();
+                }
                 if (showFeedback) showToast(getFullscreenHelpMessage());
             }
         }
@@ -1108,11 +1151,13 @@
         }
 
         function getFullscreenHelpMessage() {
-            const isAppleMobile = isAppleMobileDevice();
-            return isAppleMobile
-                && !isStandaloneApp()
-                ? 'On iPhone, use Share > Add to Home Screen to hide Safari bars'
-                : 'Full screen was blocked — tap expand again to retry';
+            if (!canRequestCameraFullscreen()) {
+                if (isAppleMobileDevice() && isStandaloneApp()) {
+                    return 'Full-screen expansion is unavailable in this installed app; the camera view uses the available app window.';
+                }
+                return 'Full-screen expansion is not supported in this browser; the camera view remains available.';
+            }
+            return 'Full-screen mode could not start. The camera view remains available at its current size.';
         }
 
         function toggleCameraFullscreen() {
@@ -1136,9 +1181,16 @@
             if (!button) return;
             const isFullscreen = document.fullscreenElement === document.getElementById('page-camera')
                 || document.webkitFullscreenElement === document.getElementById('page-camera');
+            const canExpand = canRequestCameraFullscreen();
             button.innerHTML = `<i class="fa-solid ${isFullscreen ? 'fa-compress' : 'fa-expand'} text-[10px]"></i>`;
-            button.setAttribute('aria-label', isFullscreen ? 'Exit full screen' : 'Enter full screen');
-            button.title = isFullscreen ? 'Exit Full Screen' : 'Toggle Full Screen';
+            button.setAttribute('aria-label', isFullscreen
+                ? 'Exit full screen'
+                : canExpand ? 'Enter full screen' : 'Full screen unavailable — show details');
+            button.classList.toggle('opacity-50', !isFullscreen && !canExpand);
+            button.classList.toggle('cursor-pointer', true);
+            button.title = isFullscreen
+                ? 'Exit Full Screen'
+                : canExpand ? 'Toggle Full Screen' : getFullscreenHelpMessage();
         }
 
         function handleOrientationChange() {
@@ -1146,9 +1198,9 @@
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
             if (isTouchDevice && isLandscape && state.currentPage !== 'camera') {
                 switchPage('camera', false, false);
-                const message = isAppleMobileDevice() && !isStandaloneApp()
-                    ? 'Use Share > Add to Home Screen to hide Safari bars'
-                    : 'Camera opened in landscape — tap expand if browser bars remain';
+                const message = canRequestCameraFullscreen()
+                    ? 'Camera opened in landscape — tap expand to use full screen'
+                    : `Camera opened in landscape. ${getFullscreenHelpMessage()}`;
                 showToast(message);
             }
         }
@@ -1405,12 +1457,114 @@
             }
         }
 
-        function loadSampleVin() {
-            const vin = SAMPLE_VINS[state.sampleIndex % SAMPLE_VINS.length];
-            state.sampleIndex++;
-            const input = document.getElementById('vin-input');
-            input.value = vin;
-            handleVinInput(vin);
+        function loadVinScannerLibrary() {
+            if (window.ZXing && window.ZXing.BrowserMultiFormatReader) return Promise.resolve();
+            if (state.vinScannerLibraryPromise) return state.vinScannerLibraryPromise;
+
+            state.vinScannerLibraryPromise = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = VIN_SCANNER_SCRIPT_URL;
+                script.async = true;
+                script.onload = () => {
+                    if (window.ZXing && window.ZXing.BrowserMultiFormatReader) resolve();
+                    else reject(new Error('VIN barcode scanner library did not initialize'));
+                };
+                script.onerror = () => {
+                    script.remove();
+                    reject(new Error('VIN barcode scanner library could not be loaded'));
+                };
+                document.head.appendChild(script);
+            }).catch((error) => {
+                state.vinScannerLibraryPromise = null;
+                throw error;
+            });
+
+            return state.vinScannerLibraryPromise;
+        }
+
+        function getVinFromBarcode(rawValue) {
+            const text = (rawValue || '').toUpperCase();
+            const matches = text.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
+            for (const vin of matches) {
+                const start = text.indexOf(vin);
+                const before = start > 0 ? text[start - 1] : '';
+                const after = text[start + vin.length] || '';
+                if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return vin;
+            }
+            return '';
+        }
+
+        function closeVinScanner(focusVinInput = false) {
+            state.vinScannerAttempt++;
+            const video = document.getElementById('vin-scanner-video');
+            const stream = video.srcObject;
+            if (state.vinScannerControls) {
+                state.vinScannerControls.stop();
+                state.vinScannerControls = null;
+            }
+            if (stream && stream.getTracks) {
+                stream.getTracks().forEach((track) => track.stop());
+            }
+            video.pause();
+            video.srcObject = null;
+            document.getElementById('vin-scanner-modal').classList.add('hidden');
+            if (focusVinInput) {
+                document.getElementById('vin-input').focus();
+            }
+        }
+
+        async function startVinScanner() {
+            const modal = document.getElementById('vin-scanner-modal');
+            const status = document.getElementById('vin-scanner-status');
+            const video = document.getElementById('vin-scanner-video');
+            const attempt = ++state.vinScannerAttempt;
+            modal.classList.remove('hidden');
+            status.textContent = 'Starting camera…';
+
+            if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                status.textContent = 'Camera scanning is unavailable here. Open this page over HTTPS in a supported browser, or enter the VIN manually.';
+                return;
+            }
+
+            try {
+                await loadVinScannerLibrary();
+                if (attempt !== state.vinScannerAttempt) return;
+
+                const reader = new window.ZXing.BrowserMultiFormatReader();
+                const controls = await reader.decodeFromVideoDevice(undefined, video, (result) => {
+                    if (!result || attempt !== state.vinScannerAttempt) return;
+                    const vin = getVinFromBarcode(result.getText());
+                    if (!vin) {
+                        status.textContent = 'Code detected, but it does not contain a valid 17-character VIN. Keep scanning or enter it manually.';
+                        return;
+                    }
+
+                    closeVinScanner();
+                    const input = document.getElementById('vin-input');
+                    input.value = vin;
+                    handleVinInput(vin);
+                    showToast('VIN scanned — decoding');
+                });
+
+                if (attempt !== state.vinScannerAttempt) {
+                    controls.stop();
+                    return;
+                }
+                state.vinScannerControls = controls;
+                status.textContent = 'Point the camera at a VIN barcode or QR code.';
+            } catch (error) {
+                if (attempt !== state.vinScannerAttempt) return;
+                const name = error && error.name;
+                if (name === 'NotAllowedError' || name === 'PermissionDeniedError' || name === 'SecurityError') {
+                    status.textContent = 'Camera permission was denied or blocked. Allow camera access in your browser settings, or enter the VIN manually.';
+                } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+                    status.textContent = 'No camera was found. Connect a camera or enter the VIN manually.';
+                } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+                    status.textContent = 'The camera is busy or unavailable. Close other apps using it, or enter the VIN manually.';
+                } else {
+                    status.textContent = 'Could not start barcode scanning. Check your connection and camera permission, or enter the VIN manually.';
+                }
+            }
         }
 
         async function decodeVin(manualTrigger) {
@@ -1500,7 +1654,7 @@
                 bannerText.className = 'font-semibold text-white truncate';
             } else {
                 statusIcon.className = 'fa-solid fa-car text-zinc-500 text-xs shrink-0';
-                bannerText.textContent = 'Ready — Enter 17-char VIN or tap Sample VIN';
+                bannerText.textContent = 'Ready — Enter or scan a 17-char VIN';
                 bannerText.className = 'font-semibold text-zinc-400 truncate';
             }
         }
@@ -3665,6 +3819,7 @@
             initMovableShutter();
             document.addEventListener('fullscreenchange', updateFullscreenButton);
             document.addEventListener('webkitfullscreenchange', updateFullscreenButton);
+            updateFullscreenButton();
             const orientationQuery = window.matchMedia('(orientation: landscape)');
             if (orientationQuery.addEventListener) {
                 orientationQuery.addEventListener('change', handleOrientationChange);
