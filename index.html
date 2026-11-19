@@ -2,7 +2,7 @@
 <html lang="en" class="dark">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#09090b">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -1081,7 +1081,7 @@
             const cameraEl = document.getElementById('page-camera');
             const requestFullscreen = cameraEl.requestFullscreen || cameraEl.webkitRequestFullscreen;
             if (!requestFullscreen) {
-                if (showFeedback) showToast('Full screen is not supported by this browser');
+                if (showFeedback) showToast(getFullscreenHelpMessage());
                 return;
             }
 
@@ -1089,12 +1089,30 @@
                 const result = requestFullscreen.call(cameraEl);
                 if (result && typeof result.catch === 'function') {
                     result.catch(() => {
-                        if (showFeedback) showToast('Could not enter full screen — tap the expand button to try again');
+                        if (showFeedback) showToast(getFullscreenHelpMessage());
                     });
                 }
             } catch (err) {
-                if (showFeedback) showToast('Could not enter full screen — tap the expand button to try again');
+                if (showFeedback) showToast(getFullscreenHelpMessage());
             }
+        }
+
+        function isAppleMobileDevice() {
+            return /iPhone|iPad|iPod/.test(navigator.userAgent)
+                || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        }
+
+        function isStandaloneApp() {
+            return navigator.standalone === true
+                || window.matchMedia('(display-mode: standalone)').matches;
+        }
+
+        function getFullscreenHelpMessage() {
+            const isAppleMobile = isAppleMobileDevice();
+            return isAppleMobile
+                && !isStandaloneApp()
+                ? 'On iPhone, use Share > Add to Home Screen to hide Safari bars'
+                : 'Full screen was blocked — tap expand again to retry';
         }
 
         function toggleCameraFullscreen() {
@@ -1128,7 +1146,10 @@
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
             if (isTouchDevice && isLandscape && state.currentPage !== 'camera') {
                 switchPage('camera', false, false);
-                showToast('Landscape detected — tap expand if browser bars remain');
+                const message = isAppleMobileDevice() && !isStandaloneApp()
+                    ? 'Use Share > Add to Home Screen to hide Safari bars'
+                    : 'Camera opened in landscape — tap expand if browser bars remain';
+                showToast(message);
             }
         }
 
@@ -3048,11 +3069,20 @@
         }
 
         function handleDeviceOrientation(event) {
-            if (typeof event.gamma !== 'number') return;
+            if (typeof event.beta !== 'number' || typeof event.gamma !== 'number') return;
+            const beta = event.beta * Math.PI / 180;
+            const gamma = event.gamma * Math.PI / 180;
+            const gravityX = -Math.cos(beta) * Math.sin(gamma);
+            const gravityY = Math.sin(beta);
+            const gravityAngle = Math.atan2(gravityX, gravityY) * 180 / Math.PI;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-            const tilt = isLandscape
-                ? event.gamma - (event.gamma < 0 ? -90 : 90)
-                : event.gamma;
+            const orientationAngle = screen.orientation
+                ? screen.orientation.angle
+                : (window.orientation || 0);
+            const referenceAngle = isLandscape
+                ? (gravityAngle < 0 ? -90 : 90)
+                : (Math.abs(orientationAngle % 360) === 180 ? 180 : 0);
+            const tilt = ((gravityAngle - referenceAngle + 180) % 360 + 360) % 360 - 180;
             applyTiltAngle(tilt);
         }
 
