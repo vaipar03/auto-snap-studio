@@ -2411,7 +2411,7 @@
                 const leftY = 156;
                 const rightX = isSide ? 312 : 318;
                 const rightY = isSide ? 156 : 146;
-                const flipAttr = (is34 && (angleType === 'exterior_rear' ? !mirror : mirror)) || (isSide && mirror)
+                const flipAttr = ((is34 || isSide) && mirror)
                     ? 'transform="translate(420,0) scale(-1,1)"'
                     : '';
 
@@ -2760,19 +2760,123 @@
                     }
                 };
 
-                const s = shapes34[style] || shapes34.Sedan;
+                const rearShapes34 = {
+                    Sedan: {
+                        cabin: 'M124 104 C143 77 163 59 193 58 L264 60 C291 62 311 79 330 100',
+                        window: 'M141 100 C157 78 174 66 194 66 L211 66 L210 99 Z M218 66 L263 67 C282 69 298 83 311 100 L218 99 Z',
+                        doorShut: 'M214 66 L214 150 M281 69 L278 146',
+                        handles: 'M197 111 L210 110 M260 109 L273 108',
+                        body: 'M43 145 C41 129 46 117 64 110 L130 102 L326 98 C350 99 365 109 372 127 L374 145 C331 151 286 153 240 154 L138 157 C101 156 66 152 43 145',
+                        belt: 'M132 111 C207 108 284 105 359 107',
+                        lowerSculpt: 'M198 148 L294 142',
+                        rearFace: 'M44 120 L64 111 L130 102 L130 144 C101 150 70 150 44 145 Z',
+                        rearGlass: 'M72 111 L119 106 L120 120 L70 126 Z',
+                        tailgate: 'M67 126 L122 120 L122 140 L66 143 Z'
+                    },
+                    Hatchback: {
+                        cabin: 'M120 103 C140 73 162 55 194 54 L284 55 C307 57 326 77 342 100',
+                        window: 'M137 100 C153 76 171 63 193 62 L214 63 L213 99 Z M221 63 L282 64 C304 67 320 82 331 99 L221 99 Z',
+                        doorShut: 'M217 63 L216 150 M294 66 L290 146',
+                        handles: 'M199 111 L212 110 M274 108 L287 108',
+                        body: 'M42 146 C40 128 46 116 64 109 L127 101 L337 98 C357 100 370 113 374 132 L374 146 C332 152 286 154 239 155 L137 157 C100 157 66 153 42 146',
+                        belt: 'M130 110 C207 107 289 105 362 108',
+                        lowerSculpt: 'M198 149 L294 143',
+                        rearFace: 'M43 119 L64 109 L132 101 L132 145 C100 151 69 151 43 146 Z',
+                        rearGlass: 'M72 110 L122 104 L123 120 L70 127 Z',
+                        tailgate: 'M67 127 L125 120 L125 141 L66 144 Z'
+                    },
+                    SUV: {
+                        cabin: 'M116 106 C133 74 152 52 183 50 L308 52 C329 54 343 75 351 103',
+                        window: 'M132 102 C147 75 163 60 187 59 L211 60 L210 102 Z M218 60 L271 61 L271 100 L218 102 Z M278 62 L306 63 C324 66 336 82 342 101 L278 101 Z',
+                        doorShut: 'M214 60 L214 151 M275 62 L273 148',
+                        handles: 'M196 113 L209 112 M252 110 L266 110',
+                        body: 'M42 148 C40 126 48 113 68 108 L128 99 L344 102 C362 104 372 116 375 133 L375 148 C333 154 286 156 239 156 L138 159 C100 159 66 155 42 148',
+                        belt: 'M130 109 C210 108 291 108 365 112',
+                        lowerSculpt: 'M198 151 L294 145',
+                        rearFace: 'M42 117 L66 108 L130 99 L130 147 C98 153 66 153 42 148 Z',
+                        rearGlass: 'M72 108 L120 102 L122 123 L69 130 Z',
+                        tailgate: 'M66 130 L124 122 L124 143 L65 146 Z'
+                    },
+                    Van: {
+                        cabin: 'M112 108 C129 66 151 42 181 41 L331 43 C349 45 360 66 366 99',
+                        window: 'M132 103 C146 70 163 49 186 48 L213 49 L212 103 Z M220 49 L273 50 L273 101 L220 103 Z M281 51 L326 52 C342 57 352 75 358 99 L281 101 Z',
+                        doorShut: 'M216 49 L216 152 M278 51 L276 149',
+                        handles: 'M198 115 L211 114 M255 112 L269 112',
+                        body: 'M42 150 C40 124 48 111 66 106 L126 99 L352 95 C369 98 376 114 378 134 L378 150 C334 156 286 158 238 158 L137 160 C100 160 66 157 42 150',
+                        belt: 'M128 108 L369 105',
+                        lowerSculpt: 'M198 153 L294 147',
+                        rearFace: 'M42 116 L65 106 L128 99 L128 149 C98 155 66 155 42 150 Z',
+                        rearGlass: 'M69 106 L118 100 L119 126 L67 133 Z',
+                        tailgate: 'M64 133 L121 125 L121 146 L64 148 Z'
+                    },
+                    Pickup: {
+                        cabin: 'M225 103 L240 69 C250 57 265 52 285 52 L324 54 L342 100',
+                        window: 'M245 99 L255 69 C264 61 274 59 286 59 L290 99 Z M297 59 L319 60 L335 98 L297 99 Z',
+                        doorShut: 'M293 59 L293 149 M340 99 L341 146',
+                        handles: 'M274 111 L286 110',
+                        body: 'M42 149 C40 125 48 112 66 107 L128 100 L260 98 L348 94 C365 98 374 113 376 132 L376 149 C335 155 287 157 239 157 L137 160 C100 159 66 156 42 149',
+                        belt: 'M130 109 L361 105',
+                        lowerSculpt: 'M198 153 L294 147',
+                        rearFace: 'M42 117 L65 107 L130 100 L130 148 C98 154 66 154 42 149 Z',
+                        rearGlass: 'M70 107 L119 101 L120 125 L68 132 Z',
+                        tailgate: 'M65 132 L123 124 L123 145 L64 148 Z'
+                    },
+                    Coupe: {
+                        cabin: 'M132 104 C155 81 180 65 213 63 C263 63 299 78 330 101',
+                        window: 'M151 101 C171 81 191 70 215 70 L244 70 L264 99 Z M252 71 C280 74 302 85 316 100 L271 100 Z',
+                        doorShut: 'M250 71 L255 148 M204 104 L205 150',
+                        handles: 'M231 114 L244 113',
+                        body: 'M43 145 C41 129 47 117 66 111 L132 103 L326 99 C350 100 365 110 372 127 L374 145 C331 151 286 153 240 154 L138 157 C101 156 66 152 43 145',
+                        belt: 'M134 112 C207 109 284 106 359 108',
+                        lowerSculpt: 'M198 148 L294 142',
+                        rearFace: 'M44 120 L66 111 L132 103 L132 144 C101 150 70 150 44 145 Z',
+                        rearGlass: 'M74 112 L122 107 L123 120 L72 126 Z',
+                        tailgate: 'M68 127 L125 120 L125 140 L67 143 Z'
+                    },
+                    Convertible: {
+                        cabin: 'M137 103 L171 75 L194 74 L219 99 M278 99 C290 84 309 84 323 100',
+                        window: 'M151 101 L177 79 L190 79 L170 102 Z M286 98 C296 89 307 89 316 99 Z',
+                        doorShut: 'M250 100 L254 148 M204 104 L205 150',
+                        handles: 'M231 114 L244 113',
+                        body: 'M43 145 C41 129 47 117 66 111 L132 103 L326 99 C350 100 365 110 372 127 L374 145 C331 151 286 153 240 154 L138 157 C101 156 66 152 43 145',
+                        belt: 'M134 112 C207 109 284 106 359 108',
+                        lowerSculpt: 'M198 148 L294 142',
+                        rearFace: 'M44 120 L66 111 L132 103 L132 144 C101 150 70 150 44 145 Z',
+                        rearGlass: 'M75 112 L121 107 L122 120 L73 126 Z',
+                        tailgate: 'M68 127 L125 120 L125 140 L67 143 Z'
+                    },
+                    Wagon: {
+                        cabin: 'M121 103 C141 75 161 57 193 56 L314 57 C333 59 344 78 352 100',
+                        window: 'M138 100 C154 77 172 64 194 64 L215 65 L214 100 Z M222 65 L286 65 L286 98 L222 100 Z M293 66 L318 67 C331 71 339 84 344 99 L293 99 Z',
+                        doorShut: 'M218 65 L217 150 M290 66 L287 146',
+                        handles: 'M199 111 L212 110 M270 109 L283 108',
+                        body: 'M42 146 C40 128 46 116 64 109 L128 101 L348 97 C364 100 371 112 374 130 L374 146 C332 152 286 154 239 155 L137 157 C100 157 66 153 42 146',
+                        belt: 'M131 110 C210 107 292 104 363 107',
+                        lowerSculpt: 'M198 149 L294 143',
+                        rearFace: 'M43 119 L65 109 L131 101 L131 145 C100 151 69 151 43 146 Z',
+                        rearGlass: 'M72 110 L121 104 L122 120 L70 127 Z',
+                        tailgate: 'M67 127 L124 120 L124 141 L66 144 Z'
+                    }
+                };
+                const s = isRear
+                    ? (rearShapes34[style] || rearShapes34.Sedan)
+                    : (shapes34[style] || shapes34.Sedan);
                 const shouldFlip = mirror;
                 const flip = shouldFlip ? 'transform="translate(420,0) scale(-1,1)"' : '';
+                const bracketFlip = isRear ? !mirror : mirror;
+                const bracketTransform = bracketFlip ? 'transform="translate(420,0) scale(-1,1)"' : '';
 
                 return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">
                     ${hudChrome(badgeText, false)}
                     <g transform="${vehicleGuideTransform}">
-                    <g ${flip}>
+                    <g ${bracketTransform}>
                         <!-- Bold L-Shaped Ground & Rear Corner Anchor Bracket (Sample 1 Signature) -->
                         <path d="M168 189 L378 164 L378 76" stroke="${groundBracket}" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" ${glowAttr}/>
                         <circle cx="168" cy="189" r="3.5" fill="${secondary}"/>
                         <circle cx="378" cy="164" r="3.5" fill="${secondary}"/>
                         <circle cx="378" cy="76" r="3.5" fill="${secondary}"/>
+                    </g>
+                    <g ${flip}>
 
                         <!-- Sculpted Cabin & Main Body Wireframe -->
                         <path d="${s.cabin}" stroke="${stroke}" stroke-width="2.2" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" fill="url(#carBodyGrad)" ${glowAttr}/>
@@ -2781,8 +2885,10 @@
                         <path d="${s.handles}" stroke="${secondary}" stroke-width="1.8" stroke-linecap="round"/>
                         <path d="${s.body}" stroke="${stroke}" stroke-width="2.3" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" fill="url(#carBodyGrad)" ${glowAttr}/>
 
-                        <!-- Hood Creases, Beltline & Lower Rocker Contour -->
-                        <path d="${s.hoodCrease}" stroke="${subtle}" stroke-width="1.25" stroke-linecap="round"/>
+                        <!-- Side shoulder, beltline & lower rocker contour -->
+                        ${isRear
+                            ? `<path d="M132 111 C205 105 286 102 358 105" stroke="${subtle}" stroke-width="1.25" stroke-linecap="round"/>`
+                            : `<path d="${s.hoodCrease}" stroke="${subtle}" stroke-width="1.25" stroke-linecap="round"/>`}
                         <path d="${s.belt}" stroke="${subtle}" stroke-width="1.4" stroke-linecap="round"/>
                         <path d="${s.lowerSculpt}" stroke="${subtle}" stroke-width="1.5" stroke-linecap="round"/>
 
@@ -2791,12 +2897,14 @@
                         <path d="M294 148 C294 118 340 114 342 146" stroke="${stroke}" stroke-width="2.1" ${dashAttr} stroke-linecap="round"/>
 
                         ${isRear ? `
-                            <!-- Rear deck, tail lamps, license recess and bumper -->
-                            <path d="M330 102 L352 105 L365 111" stroke="${subtle}" stroke-width="1.35" stroke-linecap="round"/>
-                            <path d="M350 115 L368 118 L366 129 L350 126 Z" stroke="${coral}" stroke-width="2" stroke-linejoin="round"/>
-                            <path d="M353 120 L364 122" stroke="${coral}" stroke-width="1.2" stroke-linecap="round"/>
-                            <path d="M354 133 L366 134" stroke="${secondary}" stroke-width="1.3" stroke-linecap="round"/>
-                            <path d="M347 140 L369 142 M342 146 L369 146" stroke="${secondary}" stroke-width="1.6" stroke-linecap="round"/>
+                            <!-- Angled rear plane, hatch glass, liftgate seam, lamps and bumper -->
+                            <path d="${s.rearFace}" stroke="${secondary}" stroke-width="2" stroke-linejoin="round" fill="rgba(15,23,42,0.28)" ${glowAttr}/>
+                            <path d="${s.rearGlass}" stroke="${secondary}" stroke-width="1.5" stroke-linejoin="round"/>
+                            <path d="${s.tailgate}" stroke="${secondary}" stroke-width="1.35" stroke-linejoin="round"/>
+                            <path d="M47 117 L64 113 L65 133 L48 135 Z M116 108 L132 103 L132 123 L115 128 Z" stroke="${coral}" stroke-width="2" stroke-linejoin="round"/>
+                            <path d="M51 122 L61 120 M119 114 L129 111" stroke="${coral}" stroke-width="1.15" stroke-linecap="round"/>
+                            <path d="M78 129 L105 125 L106 139 L78 142 Z" stroke="${secondary}" stroke-width="1.3" stroke-linejoin="round"/>
+                            <path d="M47 141 Q88 153 134 144" stroke="${secondary}" stroke-width="1.7" stroke-linecap="round"/>
                         ` : `
                             <!-- Front splitter, grille, headlights and side mirror -->
                             <path d="${s.splitter}" stroke="${secondary}" stroke-width="1.6" stroke-linecap="round"/>
@@ -2804,7 +2912,9 @@
                             <path d="${s.lightL}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
                             <path d="${s.lightR}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
                         `}
-                        <path d="M150 97 L137 91 L139 85 L154 90 Z" stroke="${stroke}" stroke-width="1.6"/>
+                        ${isRear
+                            ? `<path d="M349 101 L364 98 L368 104 L353 109 Z" stroke="${stroke}" stroke-width="1.6"/>`
+                            : `<path d="M150 97 L137 91 L139 85 L154 90 Z" stroke="${stroke}" stroke-width="1.6"/>`}
 
                         <!-- Near-Side Perspective Wheel with CAD Crosshair -->
                         <ellipse cx="168" cy="154" rx="25" ry="31" transform="rotate(-7 168 154)" stroke="${secondary}" stroke-width="2.2" ${glowAttr}/>
