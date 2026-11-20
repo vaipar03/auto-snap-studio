@@ -64,6 +64,33 @@
             overscroll-behavior: none;
         }
 
+        #page-camera.camera-immersive {
+            position: relative;
+        }
+        #page-camera.camera-immersive #camera-header {
+            position: absolute;
+            top: calc(env(safe-area-inset-top, 0px) + 0.5rem);
+            right: calc(env(safe-area-inset-right, 0px) + 0.75rem);
+            padding: 0;
+            border: 0;
+            background: transparent;
+        }
+        #page-camera.camera-immersive #camera-header-leading,
+        #page-camera.camera-immersive #camera-header-tools > :not(#fullscreen-btn),
+        #page-camera.camera-immersive #camera-angle-controls {
+            display: none !important;
+        }
+        #page-camera.camera-immersive #fullscreen-btn {
+            display: flex;
+            padding: 0.625rem;
+            border-radius: 9999px;
+            background: rgba(24, 24, 27, 0.9);
+        }
+        #page-camera.camera-immersive #camera-workspace {
+            padding: 0.375rem;
+            gap: 0.375rem;
+        }
+
         /* Landscape Camera Layout: Full-height Center Viewfinder + Right Thumb Rail */
         @media (orientation: landscape) {
             #camera-workspace {
@@ -682,7 +709,7 @@
                 </div>
 
                 <!-- Angle & Sub-Angle Pill Selectors -->
-                <div class="shrink-0 space-y-1.5">
+                <div id="camera-angle-controls" class="shrink-0 space-y-1.5">
                     <!-- Category Tabs -->
                     <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar px-0.5" id="category-tabs">
                         <button onclick="setCategoryFilter('all')" data-cat="all" class="cat-tab-btn shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-zinc-800 text-white border border-zinc-600 cursor-pointer transition">
@@ -1123,6 +1150,7 @@
             vinScannerFacingMode: 'environment',
             cameraVideoRotation: 0,
             fullscreenUnavailable: false,
+            cameraImmersive: false,
             walkaroundBarOpen: false,
             lightboxPhotoId: null,
             tone: {
@@ -1167,6 +1195,7 @@
                 }
                 updateCameraVideoOrientation();
             } else {
+                if (state.cameraImmersive) setCameraImmersive(false);
                 cameraEl.classList.add('hidden');
                 setupEl.classList.remove('hidden');
                 renderGallery();
@@ -1191,6 +1220,12 @@
             return !state.fullscreenUnavailable && Boolean(getCameraFullscreenMethod());
         }
 
+        function setCameraImmersive(enabled) {
+            state.cameraImmersive = Boolean(enabled);
+            document.getElementById('page-camera').classList.toggle('camera-immersive', state.cameraImmersive);
+            updateFullscreenButton();
+        }
+
         function requestCameraFullscreen(showFeedback = false) {
             const cameraEl = document.getElementById('page-camera');
             const requestFullscreen = getCameraFullscreenMethod(cameraEl);
@@ -1203,19 +1238,23 @@
                 const result = requestFullscreen.call(cameraEl);
                 if (result && typeof result.catch === 'function') {
                     result.catch(() => {
-                        if (isAppleMobileDevice() && isStandaloneApp()) {
-                            state.fullscreenUnavailable = true;
+                        state.fullscreenUnavailable = true;
+                        if (showFeedback) {
+                            setCameraImmersive(true);
+                            showToast(getFullscreenHelpMessage());
+                        } else {
                             updateFullscreenButton();
                         }
-                        if (showFeedback) showToast(getFullscreenHelpMessage());
                     });
                 }
             } catch (err) {
-                if (isAppleMobileDevice() && isStandaloneApp()) {
-                    state.fullscreenUnavailable = true;
+                state.fullscreenUnavailable = true;
+                if (showFeedback) {
+                    setCameraImmersive(true);
+                    showToast(getFullscreenHelpMessage());
+                } else {
                     updateFullscreenButton();
                 }
-                if (showFeedback) showToast(getFullscreenHelpMessage());
             }
         }
 
@@ -1232,9 +1271,9 @@
         function getFullscreenHelpMessage() {
             if (!canRequestCameraFullscreen()) {
                 if (isAppleMobileDevice() && isStandaloneApp()) {
-                    return 'Full-screen expansion is unavailable in this installed app; the camera view uses the available app window.';
+                    return 'Expanded camera view is using the installed app window; iOS does not allow it to expand beyond that window.';
                 }
-                return 'Full-screen expansion is not supported in this browser; the camera view remains available.';
+                return 'Expanded camera view is using the available browser window.';
             }
             return 'Full-screen mode could not start. The camera view remains available at its current size.';
         }
@@ -1252,6 +1291,12 @@
                 return;
             }
 
+            if (!canRequestCameraFullscreen()) {
+                setCameraImmersive(!state.cameraImmersive);
+                if (state.cameraImmersive) showToast(getFullscreenHelpMessage());
+                return;
+            }
+
             requestCameraFullscreen(true);
         }
 
@@ -1261,15 +1306,19 @@
             const isFullscreen = document.fullscreenElement === document.getElementById('page-camera')
                 || document.webkitFullscreenElement === document.getElementById('page-camera');
             const canExpand = canRequestCameraFullscreen();
-            button.innerHTML = `<i class="fa-solid ${isFullscreen ? 'fa-compress' : 'fa-expand'} text-[10px]"></i>`;
+            const isExpanded = isFullscreen || state.cameraImmersive;
+            button.innerHTML = `<i class="fa-solid ${isExpanded ? 'fa-compress' : 'fa-expand'} text-[10px]"></i>`;
             button.setAttribute('aria-label', isFullscreen
                 ? 'Exit full screen'
-                : canExpand ? 'Enter full screen' : 'Full screen unavailable — show details');
-            button.classList.toggle('opacity-50', !isFullscreen && !canExpand);
+                : state.cameraImmersive
+                    ? 'Exit expanded camera view'
+                    : canExpand ? 'Enter full screen' : 'Expand camera view');
             button.classList.toggle('cursor-pointer', true);
             button.title = isFullscreen
                 ? 'Exit Full Screen'
-                : canExpand ? 'Toggle Full Screen' : getFullscreenHelpMessage();
+                : state.cameraImmersive
+                    ? 'Exit Expanded Camera View'
+                    : canExpand ? 'Toggle Full Screen' : 'Expand Camera View';
         }
 
         function handleOrientationChange() {
@@ -1281,7 +1330,7 @@
                 switchPage('camera', false, false);
                 const message = canRequestCameraFullscreen()
                     ? 'Camera opened in landscape — tap expand to use full screen'
-                    : `Camera opened in landscape. ${getFullscreenHelpMessage()}`;
+                    : 'Camera opened in landscape — tap expand to enlarge the camera view';
                 showToast(message);
             }
         }
