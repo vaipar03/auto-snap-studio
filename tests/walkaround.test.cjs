@@ -42,10 +42,10 @@ test('portrait camera header keeps an explicit return-to-setup action', () => {
     assert.match(html, /@media \(orientation: portrait\) and \(max-width: 639px\)[\s\S]*?#camera-back-button\s*\{[\s\S]*?display:\s*flex/);
 });
 
-test('Page 1 reserves safe-area space for narrow portrait screens', () => {
+test('setup and camera headers reserve safe-area space in narrow portrait screens', () => {
     assert.match(
         html,
-        /@media \(orientation: portrait\) and \(max-width: 639px\)\s*\{[\s\S]*?#setup-page-header\s*\{\s*padding-top:\s*max\(4\.5rem,\s*calc\(env\(safe-area-inset-top,\s*0px\)\s*\+\s*0\.75rem\)\)/
+        /@media \(orientation: portrait\) and \(max-width: 639px\)\s*\{[\s\S]*?#setup-page-header,\s*#camera-header\s*\{\s*padding-top:\s*max\(4\.5rem,\s*calc\(env\(safe-area-inset-top,\s*0px\)\s*\+\s*0\.75rem\)\)/
     );
 });
 
