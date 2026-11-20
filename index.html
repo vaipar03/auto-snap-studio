@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#09090b">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <title>Auto Snap Studio — 2-Page Vehicle Capture</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -33,10 +33,28 @@
     </script>
 
     <style>
-        .safe-top { padding-top: max(0.5rem, env(safe-area-inset-top)); }
+        .safe-top { padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem); }
         .safe-bottom { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        #setup-page-header { padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem); }
+        #camera-right-rail { position: relative; }
+        #subangle-bar {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: calc(100% + 0.5rem);
+            z-index: 35;
+            padding: 0.4rem;
+            border: 1px solid rgba(63, 63, 70, 0.9);
+            border-radius: 1rem;
+            background: rgba(9, 9, 11, 0.96);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+        }
+        @supports (-webkit-touch-callout: none) {
+            .safe-top { padding-top: max(4.5rem, calc(env(safe-area-inset-top, 0px) + 0.75rem)); }
+            #setup-page-header { padding-top: max(4.5rem, calc(env(safe-area-inset-top, 0px) + 0.75rem)); }
+        }
 
         /* Page 2 Camera Mode: Full-screen lock & Portrait/Landscape split */
         body[data-page="camera"] {
@@ -87,6 +105,36 @@
                 padding-left: 0.375rem;
                 padding-right: 0.375rem;
             }
+            #subangle-bar {
+                left: auto;
+                right: calc(100% + 0.5rem);
+                bottom: 50%;
+                width: min(28rem, calc(100vw - 8.5rem));
+                transform: translateY(50%);
+            }
+        }
+        @media (orientation: portrait) and (max-width: 639px) {
+            #camera-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            #camera-header-leading,
+            #camera-header-tools {
+                width: 100%;
+            }
+            #camera-header-tools {
+                max-width: 100%;
+                overflow-x: auto;
+                justify-content: flex-start;
+            }
+            #camera-back-button {
+                display: flex;
+                visibility: visible;
+                min-width: 5rem;
+                justify-content: center;
+                position: relative;
+                z-index: 40;
+            }
         }
 
         @keyframes shutterFlash {
@@ -117,8 +165,8 @@
     ========================================================================== -->
     <div id="page-setup" class="min-h-screen flex flex-col justify-between">
         <!-- Page 1 Sticky Top Bar -->
-        <header class="sticky top-0 z-30 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/90 px-3 sm:px-5 py-3 safe-top">
-            <div class="max-w-4xl mx-auto flex items-center justify-between gap-3">
+        <header id="setup-page-header" class="sticky top-0 z-30 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800/90 px-3 sm:px-5 py-3">
+            <div id="setup-header-row" class="max-w-4xl mx-auto flex items-center justify-between gap-3">
                 <div class="flex items-center gap-2.5 min-w-0">
                     <div class="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center shadow-lg shadow-red-600/25 shrink-0">
                         <i class="fa-solid fa-camera text-white text-sm"></i>
@@ -431,14 +479,17 @@
     <div id="page-camera" class="hidden h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between bg-zinc-950 overflow-hidden">
         
         <!-- Top Minimal Camera HUD Bar -->
-        <header class="shrink-0 bg-zinc-950/95 border-b border-zinc-900 px-2.5 sm:px-4 py-1.5 safe-top flex items-center justify-between gap-2 z-30">
-            <div class="flex items-center gap-1.5 sm:gap-2 min-w-0">
+        <header id="camera-header" class="shrink-0 bg-zinc-950/95 border-b border-zinc-900 px-2.5 sm:px-4 py-1.5 safe-top flex items-center justify-between gap-2 z-30">
+            <div id="camera-header-leading" class="flex items-center gap-1.5 sm:gap-2 min-w-0">
                 <button
+                    id="camera-back-button"
                     onclick="switchPage('setup')"
+                    aria-label="Back to setup"
+                    title="Back to setup"
                     class="shrink-0 px-2.5 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 border border-zinc-700/80 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer transition"
                 >
                     <i class="fa-solid fa-arrow-left text-[11px] text-zinc-400"></i>
-                    <span>Setup</span>
+                    <span>Back</span>
                 </button>
 
                 <div class="min-w-0 truncate px-2.5 py-1 rounded-xl bg-zinc-900/80 border border-zinc-800 text-[11px] font-mono text-zinc-300 hidden sm:block">
@@ -488,7 +539,7 @@
             </div>
 
             <!-- Quick Viewfinder Optical Tools -->
-            <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            <div id="camera-header-tools" class="flex items-center gap-1 sm:gap-1.5 shrink-0 no-scrollbar">
                 <button onclick="requestGyroPermission(true)" class="px-2 py-1 rounded-xl bg-zinc-900 border border-zinc-700/80 text-[11px] font-mono text-zinc-300 hover:text-white cursor-pointer" title="Enable Motion Leveler" aria-label="Enable motion leveler">
                     <i class="fa-solid fa-ruler-horizontal text-[10px]"></i>
                 </button>
@@ -647,12 +698,6 @@
                     <!-- Horizontal Angle Stepper Pills -->
                     <div id="angle-stepper" class="flex items-center gap-1.5 overflow-x-auto no-scrollbar px-0.5"></div>
 
-                    <!-- Sub-Angle Framing Switcher -->
-                    <div id="subangle-bar" class="hidden flex items-center justify-between gap-1.5 px-0.5">
-                        <span id="subangle-bar-label" class="text-[11px] font-semibold text-zinc-400 shrink-0 pl-1">Framing:</span>
-                        <div id="subangle-buttons" class="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar"></div>
-                    </div>
-
                     <!-- Extra Detail Custom Label Bar -->
                     <div id="extra-detail-bar" class="hidden flex items-center gap-1.5 px-0.5">
                         <div class="relative flex-1 min-w-0 flex items-center">
@@ -694,6 +739,19 @@
                         <i class="fa-solid fa-forward-step text-[10px]"></i>
                         <span id="auto-advance-label">Auto-Next</span>
                     </button>
+                    <button
+                        onclick="toggleWalkaroundFraming()"
+                        id="walkaround-toggle-btn"
+                        aria-label="Open 8-angle walkaround framing"
+                        aria-controls="subangle-bar"
+                        aria-expanded="false"
+                        title="Open 8-angle walkaround framing"
+                        class="rail-pill-btn px-2 py-2 rounded-full bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[10px] font-bold flex items-center gap-1.5 transition cursor-pointer shrink-0"
+                    >
+                        <i class="fa-solid fa-route text-[11px]"></i>
+                        <span class="font-mono">8</span>
+                        <span class="hidden sm:inline">Angles</span>
+                    </button>
                 </div>
 
                 <!-- Center: Full Circular Draggable Shutter Button -->
@@ -722,6 +780,12 @@
                             </div>
                         </button>
                     </div>
+                </div>
+
+                <!-- Walkaround / Sub-Angle Framing Bar -->
+                <div id="subangle-bar" class="hidden flex items-center justify-between gap-1.5">
+                    <span id="subangle-bar-label" class="text-[11px] font-semibold text-zinc-400 shrink-0 pl-1">Framing:</span>
+                    <div id="subangle-buttons" class="flex items-center gap-1.5 flex-1 min-w-0 overflow-x-auto no-scrollbar"></div>
                 </div>
 
                 <!-- Group 2: Switch Camera + Gallery Counter Pill (Returns to Page 1 Gallery) -->
@@ -832,7 +896,7 @@
                         >
                         <div id="apps-script-helper" class="hidden space-y-2 pt-1 border-t border-zinc-800">
                             <div class="flex items-center justify-between">
-                                <span class="text-[10px] font-mono text-zinc-400">script.google.com → Deploy as Web App (Anyone)</span>
+                                <span class="text-[10px] font-mono text-zinc-400">Deploy as Web App: execute as Me, access: Anyone</span>
                                 <button onclick="copyAppsScriptSnippet()" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[11px] font-semibold text-emerald-400 cursor-pointer transition">
                                     <i class="fa-regular fa-copy mr-1"></i>Copy Code
                                 </button>
@@ -851,6 +915,7 @@
 
                     <div id="panel-drive-oauth" class="hidden space-y-2 p-3 rounded-xl bg-zinc-950 border border-zinc-800">
                         <label class="text-[11px] font-semibold text-zinc-300 block">Google Cloud OAuth 2.0 Web Client ID</label>
+                        <p class="text-[10px] text-zinc-400">OAuth mode requests Drive access so it can upload into the folder you provide. Reauthorize after changing this permission.</p>
                         <input
                             type="text"
                             id="drive-client-id-input"
@@ -1018,6 +1083,8 @@
         const STORAGE_DRIVE_KEY = 'autosnap_drive_config';
         const STORAGE_SHUTTER_POS_KEY = 'autosnap_shutter_pos_v1';
         const VIN_SCANNER_SCRIPT_URL = 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js';
+        let driveUploadQueue = Promise.resolve();
+        const queuedDriveUploadIds = new Set();
 
         let state = {
             currentPage: 'setup',
@@ -1052,6 +1119,7 @@
             vinScannerFacingMode: 'environment',
             cameraVideoRotation: 0,
             fullscreenUnavailable: false,
+            walkaroundBarOpen: false,
             lightboxPhotoId: null,
             tone: {
                 preset: 'auto_lot',
@@ -1202,6 +1270,7 @@
 
         function handleOrientationChange() {
             updateCameraVideoOrientation();
+            renderOverlay();
             const isTouchDevice = navigator.maxTouchPoints > 0;
             const isLandscape = window.matchMedia('(orientation: landscape)').matches;
             if (isTouchDevice && isLandscape && state.currentPage !== 'camera') {
@@ -1265,6 +1334,30 @@
             renderOverlay();
         }
 
+        function selectNextUncapturedWalkaround() {
+            const nextOption = ANGLE_SUB_OPTIONS.ext_walkaround.options.find(option =>
+                !state.photos.some(photo => photo.angleId === 'ext_walkaround' && photo.subAngleKey === option.key)
+            );
+            if (nextOption) state.selectedSubAngles.ext_walkaround = nextOption.key;
+        }
+
+        function toggleWalkaroundFraming() {
+            const walkaroundIndex = CORE_ANGLES.findIndex(angle => angle.isWalkaround);
+            if (walkaroundIndex < 0) {
+                showToast('The 8-angle walkaround is unavailable');
+                return;
+            }
+
+            state.walkaroundBarOpen = !state.walkaroundBarOpen;
+            if (state.walkaroundBarOpen) {
+                state.categoryFilter = 'exterior';
+                state.activeAngleIndex = walkaroundIndex;
+                selectNextUncapturedWalkaround();
+            }
+            renderStepper();
+            renderOverlay();
+        }
+
         function renderOverlay() {
             const angleObj = CORE_ANGLES[state.activeAngleIndex] || CORE_ANGLES[0];
             const extraBar = document.getElementById('extra-detail-bar');
@@ -1272,8 +1365,10 @@
 
             const subGroup = ANGLE_SUB_OPTIONS[angleObj.id];
             const subBar = document.getElementById('subangle-bar');
+            const showSubAngleBar = Boolean(subGroup)
+                && (!angleObj.isWalkaround || state.walkaroundBarOpen);
             if (subBar) {
-                if (subGroup) {
+                if (showSubAngleBar) {
                     subBar.classList.remove('hidden');
                     document.getElementById('subangle-bar-label').textContent = subGroup.prompt;
                     const activeKey = state.selectedSubAngles[angleObj.id] || subGroup.options[0].key;
@@ -1298,6 +1393,12 @@
                 } else {
                     subBar.classList.add('hidden');
                 }
+            }
+            const walkaroundToggle = document.getElementById('walkaround-toggle-btn');
+            if (walkaroundToggle) {
+                const isOpen = Boolean(angleObj.isWalkaround && state.walkaroundBarOpen);
+                walkaroundToggle.setAttribute('aria-expanded', String(isOpen));
+                walkaroundToggle.classList.toggle('bg-sky-500/30', isOpen);
             }
 
             const resolved = getResolvedAngleInfo(angleObj);
@@ -1492,11 +1593,12 @@
 
         function getVinFromBarcode(rawValue) {
             const text = (rawValue || '').toUpperCase();
-            const matches = text.match(/[A-HJ-NPR-Z0-9]{17}/g) || [];
-            for (const vin of matches) {
-                const start = text.indexOf(vin);
+            const matches = text.matchAll(/[A-HJ-NPR-Z0-9](?:[\s-]*[A-HJ-NPR-Z0-9]){16}/g);
+            for (const match of matches) {
+                const start = match.index;
+                const vin = match[0].replace(/[\s-]/g, '');
                 const before = start > 0 ? text[start - 1] : '';
-                const after = text[start + vin.length] || '';
+                const after = text[start + match[0].length] || '';
                 if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return vin;
             }
             return '';
@@ -1512,8 +1614,8 @@
             return navigator.mediaDevices.getUserMedia({
                 video: {
                     facingMode: { ideal: state.vinScannerFacingMode },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
                 },
                 audio: false
             }).catch((error) => {
@@ -1582,7 +1684,9 @@
                     return;
                 }
 
-                const reader = new window.ZXing.BrowserMultiFormatReader();
+                const hints = new Map();
+                hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+                const reader = new window.ZXing.BrowserMultiFormatReader(hints);
                 state.vinScannerReader = reader;
                 await reader.decodeFromStream(stream, video, (result) => {
                     if (!result || attempt !== state.vinScannerAttempt) return;
@@ -1773,6 +1877,8 @@
             { id: 'pro_grid', label: 'Pro Grid' },
             { id: 'off', label: 'Guide Off' }
         ];
+        const VEHICLE_GUIDE_SCALE = 1.177;
+        const VEHICLE_GUIDE_LANDSCAPE_SCALE = 1.15;
 
         const OUTLINER_LOOKS = [
             { id: 'cad_sketch', label: 'CAD Sketch', stroke: '#60a5fa', secondary: '#e0f2fe', subtle: 'rgba(147,197,253,0.38)', accent: '#3b82f6', groundBracket: '#3b82f6', fillTop: 'rgba(59,130,246,0.10)', dash: '', glow: true },
@@ -2194,6 +2300,15 @@
            7. HYBRID LOT WIREFRAME + TECHNICAL CAD BLUEPRINT OVERLAYS (8 SHAPES)
         ============================================================================ */
         function buildSilhouetteSvg(style, angleType, mirror = false) {
+            const scalesVehicleGuide = angleType.startsWith('exterior')
+                && state.guideStyle !== 'off'
+                && state.guideStyle !== 'pro_grid';
+            const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+            const vehicleGuideScale = scalesVehicleGuide
+                ? VEHICLE_GUIDE_SCALE * (isLandscape ? VEHICLE_GUIDE_LANDSCAPE_SCALE : 1)
+                : 1;
+            const vehicleGuideViewBox = scalesVehicleGuide && isLandscape ? '-28 0 476 230' : '0 0 420 230';
+            const vehicleGuideTransform = `translate(210 115) scale(${vehicleGuideScale}) translate(-210 -115)`;
             const look = OUTLINER_LOOKS.find(o => o.id === state.outlinerLook) || OUTLINER_LOOKS[0];
             const stroke = look.stroke;
             const secondary = look.secondary || stroke;
@@ -2219,10 +2334,11 @@
                     : angleType === 'exterior_side' ? 'LEVEL ROCKERS ON GREEN LINE • EQUAL MARGINS'
                     : 'CENTER SUBJECT INSIDE FRAME';
 
-                return `<svg viewBox="0 0 420 230" class="w-full h-full max-w-2xl" fill="none">
+                return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">
                     <rect x="64" y="8" width="292" height="17" rx="8.5" fill="rgba(9,9,11,0.72)" stroke="rgba(255,255,255,0.16)" stroke-width="1"/>
                     <circle cx="76" cy="16.5" r="2.5" fill="${accent}"/>
                     <text x="214" y="19.5" text-anchor="middle" fill="rgba(255,255,255,0.92)" font-size="8.6" font-weight="600" font-family="monospace" letter-spacing="0.7">${cue}</text>
+                    <g transform="${vehicleGuideTransform}">
                     <rect x="${boxX}" y="${boxY}" width="${boxW}" height="${boxH}" rx="14" stroke="rgba(255,255,255,0.16)" stroke-width="1" stroke-dasharray="6 6"/>
                     <path d="M${boxX} ${boxY + 24} L${boxX} ${boxY + 12} Q${boxX} ${boxY} ${boxX + 12} ${boxY} L${boxX + 28} ${boxY}" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
                     <path d="M${boxX + boxW} ${boxY + 24} L${boxX + boxW} ${boxY + 12} Q${boxX + boxW} ${boxY} ${boxX + boxW - 12} ${boxY} L${boxX + boxW - 28} ${boxY}" stroke="#ffffff" stroke-width="2.4" stroke-linecap="round"/>
@@ -2231,6 +2347,7 @@
                     <line x1="${boxX + 14}" y1="${boxY + boxH}" x2="${boxX + boxW - 14}" y2="${boxY + boxH}" stroke="${accent}" stroke-width="1.8" stroke-opacity="0.75"/>
                     <line x1="210" y1="${boxY - 5}" x2="210" y2="${boxY + 5}" stroke="rgba(255,255,255,0.55)" stroke-width="1.5"/>
                     <line x1="210" y1="${boxY + boxH - 5}" x2="210" y2="${boxY + boxH + 5}" stroke="${accent}" stroke-width="1.5"/>
+                    </g>
                 </svg>`;
             }
 
@@ -2245,10 +2362,11 @@
                     ? 'transform="translate(420,0) scale(-1,1)"'
                     : '';
 
-                return `<svg viewBox="0 0 420 230" class="w-full h-full max-w-2xl" fill="none">
+                return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">
                     <rect x="64" y="8" width="292" height="17" rx="8.5" fill="rgba(9,9,11,0.72)" stroke="rgba(255,255,255,0.16)" stroke-width="1"/>
                     <circle cx="76" cy="16.5" r="2.5" fill="${accent}"/>
                     <text x="214" y="19.5" text-anchor="middle" fill="rgba(255,255,255,0.92)" font-size="8.6" font-weight="600" font-family="monospace" letter-spacing="0.7">LOCK TIRES ON TARGET RINGS • LEVEL GROUND RAIL</text>
+                    <g transform="${vehicleGuideTransform}">
                     <g ${flipAttr}>
                         ${(isSide || is34) ? `
                             <line x1="36" y1="${leftY + 29}" x2="384" y2="${rightY + (isSide ? 29 : 23)}" stroke="${accent}" stroke-width="1.8" stroke-opacity="0.75" stroke-dasharray="6 4"/>
@@ -2269,6 +2387,7 @@
                             <line x1="136" y1="122" x2="284" y2="122" stroke="${accent}" stroke-width="1.4"/>
                             <line x1="210" y1="54" x2="210" y2="190" stroke="${accent}" stroke-width="1.4"/>
                         `}
+                    </g>
                     </g>
                 </svg>`;
             }
@@ -2399,11 +2518,12 @@
                 const title = isRear
                     ? `${style.toUpperCase()} REAR CAD • ALIGN SYMMETRY AXIS & BUMPER`
                     : `${style.toUpperCase()} FRONT CAD • ALIGN CENTERLINE & GRILLE`;
-                return `<svg viewBox="0 0 420 230" class="w-full h-full max-w-2xl" fill="none">
+                return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">
                     ${hudChrome(title)}
+                    <g transform="${vehicleGuideTransform}">
                     <!-- CAD Ground Datum & Vertical Center Symmetry Line -->
                     <line x1="48" y1="192" x2="372" y2="192" stroke="${secondary}" stroke-width="1.6"/>
-                    <line x1="210" y1="32" x2="210" y2="202" stroke="${secondary}" stroke-width="1.4"/>
+                    <line x1="210" y1="32" x2="210" y2="198" stroke="${secondary}" stroke-width="1.4"/>
                     <!-- Cabin Roofline & Windshield / Backglass Frame -->
                     <path d="M114 ${hoodY} L142 ${roofY} Q210 ${roofY - 6} 278 ${roofY} L306 ${hoodY}" stroke="${stroke}" stroke-width="2.2" stroke-linejoin="round" fill="url(#carBodyGrad)"/>
                     <path d="M128 ${hoodY - 2} L150 ${roofY + 8} Q210 ${roofY + 3} 270 ${roofY + 8} L292 ${hoodY - 2} Z" stroke="${secondary}" stroke-width="1.3"/>
@@ -2430,6 +2550,7 @@
                     <rect x="152" y="${hoodY + 15}" width="116" height="22" rx="7" stroke="${secondary}" stroke-width="1.6"/>
                     <rect x="132" y="${hoodY + 42}" width="156" height="12" rx="5" stroke="${subtle}" stroke-width="1.4"/>
                     <circle cx="210" cy="${hoodY + 9}" r="6.5" stroke="${secondary}" stroke-width="1.8"/>
+                    </g>
                 </svg>`;
             }
 
@@ -2590,8 +2711,9 @@
                 const shouldFlip = isRear ? !mirror : mirror;
                 const flip = shouldFlip ? 'transform="translate(420,0) scale(-1,1)"' : '';
 
-                return `<svg viewBox="0 0 420 230" class="w-full h-full max-w-2xl" fill="none">
+                return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">
                     ${hudChrome(badgeText, false)}
+                    <g transform="${vehicleGuideTransform}">
                     <g ${flip}>
                         <!-- Bold L-Shaped Ground & Rear Corner Anchor Bracket (Sample 1 Signature) -->
                         <path d="M168 189 L378 164 L378 76" stroke="${groundBracket}" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" ${glowAttr}/>
@@ -2634,6 +2756,7 @@
                         <ellipse cx="318" cy="144" rx="11" ry="15" transform="rotate(-5 318 144)" stroke="${stroke}" stroke-width="1.3"/>
                         <line x1="306" y1="144" x2="330" y2="144" stroke="${subtle}" stroke-width="1"/>
                         <line x1="318" y1="128" x2="318" y2="160" stroke="${subtle}" stroke-width="1"/>
+                    </g>
                     </g>
                 </svg>`;
             }
@@ -2720,10 +2843,11 @@
             const wheelY = 154;
             const sideFlip = mirror ? 'transform="translate(420,0) scale(-1,1)"' : '';
 
-            return `<svg viewBox="0 0 420 230" class="w-full h-full max-w-2xl" fill="none">
+            return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">
                 ${hudChrome(`${style.toUpperCase()} ${sideDirection} CAD • LOCK AXLE CROSSHAIRS`)}
                 <!-- Precision CAD Ground Datum Line -->
                 <line x1="28" y1="${wheelY + p.rOuter}" x2="392" y2="${wheelY + p.rOuter}" stroke="${secondary}" stroke-width="1.8"/>
+                <g transform="${vehicleGuideTransform}">
                 <g ${sideFlip}>
                     <path d="${p.body}" stroke="${stroke}" stroke-width="2.2" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" fill="url(#carBodyGrad)" ${glowAttr}/>
                     <path d="M44 150 L${p.wheelF - p.rOuter - 5} 154 A${p.rOuter + 5} ${p.rOuter + 5} 0 0 1 ${p.wheelF + p.rOuter + 5} 154" stroke="${stroke}" stroke-width="2" ${dashAttr} stroke-linecap="round"/>
@@ -2750,6 +2874,7 @@
                     <line x1="${p.wheelR - p.rOuter - 8}" y1="${wheelY}" x2="${p.wheelR + p.rOuter + 8}" y2="${wheelY}" stroke="${subtle}" stroke-width="1.2"/>
                     <line x1="${p.wheelR}" y1="${wheelY - p.rOuter - 8}" x2="${p.wheelR}" y2="${wheelY + p.rOuter + 8}" stroke="${subtle}" stroke-width="1.2"/>
                 </g>
+                </g>
             </svg>`;
         }
 
@@ -2762,11 +2887,16 @@
                     : 'cat-tab-btn shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-zinc-900 text-zinc-400 hover:text-white border border-zinc-800 cursor-pointer transition';
             });
 
-            if (cat !== 'all') {
+            if (cat === 'exterior') {
+                state.activeAngleIndex = CORE_ANGLES.findIndex(angle => angle.isWalkaround);
+                state.walkaroundBarOpen = state.activeAngleIndex >= 0;
+                if (state.walkaroundBarOpen) selectNextUncapturedWalkaround();
+            } else if (cat !== 'all') {
                 const firstInCat = CORE_ANGLES.findIndex(a => a.category === cat);
                 if (firstInCat >= 0 && CORE_ANGLES[state.activeAngleIndex]?.category !== cat) {
                     state.activeAngleIndex = firstInCat;
                 }
+                state.walkaroundBarOpen = Boolean(CORE_ANGLES[state.activeAngleIndex]?.isWalkaround);
             }
             renderStepper();
             renderOverlay();
@@ -2849,7 +2979,10 @@
         }
 
         function selectAngle(idx) {
+            const openingWalkaround = Boolean(CORE_ANGLES[idx]?.isWalkaround && !state.walkaroundBarOpen);
             state.activeAngleIndex = idx;
+            state.walkaroundBarOpen = Boolean(CORE_ANGLES[idx]?.isWalkaround);
+            if (openingWalkaround) selectNextUncapturedWalkaround();
             renderStepper();
             renderOverlay();
         }
@@ -3033,8 +3166,7 @@
         }
 
         function saveCapturedRecord(angleObj, dataUrl, effectiveLabel) {
-            const hasDriveTarget = Boolean(state.drive.folderId || state.drive.webhookUrl);
-            const initialStatus = hasDriveTarget ? 'queued' : 'local';
+            const initialStatus = isDirectUploadReady() ? 'queued' : 'local';
             const resolved = getResolvedAngleInfo(angleObj);
             const displayLabel = effectiveLabel || resolved.label;
 
@@ -3063,7 +3195,7 @@
                 const msg = `Saved ${displayLabel} (#${extraSeq})`;
                 if (state.drive.autoUpload && isDirectUploadReady()) {
                     showToast(`${msg} • Uploading...`);
-                    uploadPhotoToDrive(record.id);
+                    queueAutoUpload(record.id);
                 } else {
                     showToast(msg);
                 }
@@ -3106,7 +3238,7 @@
                         renderGallery();
                         if (state.drive.autoUpload && isDirectUploadReady()) {
                             showToast(`${toastMessage} • Uploading...`);
-                            uploadPhotoToDrive(record.id);
+                            queueAutoUpload(record.id);
                         } else {
                             showToast(toastMessage);
                         }
@@ -3117,13 +3249,14 @@
                 const nextIdx = findNextUncapturedAngleIndex(state.activeAngleIndex);
                 if (nextIdx !== -1) {
                     state.activeAngleIndex = nextIdx;
+                    state.walkaroundBarOpen = Boolean(CORE_ANGLES[nextIdx]?.isWalkaround);
                     if (state.categoryFilter !== 'all' && CORE_ANGLES[nextIdx].category !== state.categoryFilter) {
                         setCategoryFilter('all');
                         toastMessage = `Saved ${displayLabel} → Next: ${CORE_ANGLES[nextIdx].label}`;
                         renderGallery();
                         if (state.drive.autoUpload && isDirectUploadReady()) {
                             showToast(`${toastMessage} • Uploading...`);
-                            uploadPhotoToDrive(record.id);
+                            queueAutoUpload(record.id);
                         } else {
                             showToast(toastMessage);
                         }
@@ -3133,6 +3266,7 @@
                 } else {
                     const extraIdx = CORE_ANGLES.findIndex(a => a.isExtra);
                     if (extraIdx !== -1) state.activeAngleIndex = extraIdx;
+                    state.walkaroundBarOpen = false;
                     toastMessage = `All 17 standard positions complete!`;
                 }
             }
@@ -3143,7 +3277,7 @@
 
             if (state.drive.autoUpload && isDirectUploadReady()) {
                 showToast(`${toastMessage} • Uploading...`);
-                uploadPhotoToDrive(record.id);
+                queueAutoUpload(record.id);
             } else {
                 showToast(toastMessage);
             }
@@ -3220,6 +3354,8 @@
                     statusBadge = `<span class="px-2 py-0.5 rounded-md bg-sky-500/90 text-white text-[10px] font-bold flex items-center gap-1 shadow"><i class="fa-solid fa-spinner fa-spin"></i>Syncing</span>`;
                 } else if (photo.driveStatus === 'queued') {
                     statusBadge = `<span class="px-2 py-0.5 rounded-md bg-amber-400/90 text-zinc-950 text-[10px] font-bold shadow">Queued</span>`;
+                } else if (photo.driveStatus === 'sent') {
+                    statusBadge = `<span class="px-2 py-0.5 rounded-md bg-amber-300/90 text-zinc-950 text-[10px] font-bold shadow">Sent · verify</span>`;
                 } else if (photo.driveStatus === 'error') {
                     statusBadge = `<span class="px-2 py-0.5 rounded-md bg-red-500/90 text-white text-[10px] font-bold shadow">Retry</span>`;
                 }
@@ -3425,10 +3561,36 @@
 
         function isDirectUploadReady() {
             const d = state.drive;
-            if (!d.folderId && !d.webhookUrl) return false;
-            if (d.authMode === 'webhook') return Boolean(d.webhookUrl);
+            if (d.authMode === 'webhook') return Boolean(d.folderId && d.webhookUrl);
             if (d.authMode === 'oauth') return Boolean(d.folderId && d.accessToken && Date.now() < d.tokenExpiresAt);
             return false;
+        }
+
+        function queueAutoUpload(photoId) {
+            if (!state.drive.autoUpload || !isDirectUploadReady() || queuedDriveUploadIds.has(photoId)) return;
+            queuedDriveUploadIds.add(photoId);
+            driveUploadQueue = driveUploadQueue
+                .then(() => {
+                    if (!state.drive.autoUpload || !isDirectUploadReady()) return false;
+                    return uploadPhotoToDrive(photoId);
+                })
+                .then(() => queuedDriveUploadIds.delete(photoId))
+                .catch(error => {
+                    queuedDriveUploadIds.delete(photoId);
+                    const photo = state.photos.find(item => item.id === photoId);
+                    if (photo) photo.driveStatus = 'error';
+                    renderGallery();
+                    console.error(`Drive auto-upload failed for ${photoId}`, error);
+                    const message = error && error.message ? error.message : 'check connection and settings';
+                    showToast(`Drive auto-upload failed: ${message}`);
+                });
+        }
+
+        function queuePendingDriveUploads() {
+            if (!state.drive.autoUpload || !isDirectUploadReady()) return;
+            state.photos
+                .filter(photo => ['local', 'queued', 'error'].includes(photo.driveStatus))
+                .forEach(photo => queueAutoUpload(photo.id));
         }
 
         function loadDriveConfig() {
@@ -3444,6 +3606,7 @@
                 quickInput.value = state.drive.folderUrl;
             }
             syncDriveUiIndicators();
+            queuePendingDriveUploads();
         }
 
         function handleQuickDriveUrlChange(val) {
@@ -3455,6 +3618,7 @@
                 localStorage.setItem(STORAGE_DRIVE_KEY, JSON.stringify(toSave));
             } catch (e) {}
             syncDriveUiIndicators();
+            queuePendingDriveUploads();
         }
 
         function syncDriveUiIndicators() {
@@ -3464,10 +3628,10 @@
             const autoPillText = document.getElementById('auto-upload-pill-text');
             const modalAutoBtn = document.getElementById('modal-auto-upload-btn');
 
-            const configured = Boolean(d.folderId || d.webhookUrl);
+            const configured = isDirectUploadReady();
             if (configured) {
                 if (dot) dot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-                if (label) label.textContent = d.folderId ? `Connected (${d.folderId.slice(0, 6)}…)` : 'Webhook Ready';
+                if (label) label.textContent = d.authMode === 'webhook' ? 'Webhook Ready' : `Connected (${d.folderId.slice(0, 6)}…)`;
             } else {
                 if (dot) dot.className = 'w-2 h-2 rounded-full bg-amber-400';
                 if (label) label.textContent = 'Not Configured';
@@ -3542,6 +3706,7 @@
                 panelOauth.classList.remove('hidden');
                 panelWebhook.classList.add('hidden');
             }
+            queuePendingDriveUploads();
         }
 
         function toggleScriptHelper() {
@@ -3563,6 +3728,7 @@
                 localStorage.setItem(STORAGE_DRIVE_KEY, JSON.stringify(toSave));
             } catch (e) {}
             syncDriveUiIndicators();
+            queuePendingDriveUploads();
             showToast(state.drive.autoUpload ? 'Auto-Upload to Drive: ON' : 'Auto-Upload to Drive: OFF');
         }
 
@@ -3596,7 +3762,7 @@
             } catch (e) {}
 
             state.photos.forEach(p => {
-                if (p.driveStatus === 'local' && (folderId || webhookUrl)) {
+                if (p.driveStatus === 'local' && isDirectUploadReady()) {
                     p.driveStatus = 'queued';
                 }
             });
@@ -3605,6 +3771,7 @@
             renderGallery();
             closeDriveModal();
             showToast(folderId || webhookUrl ? 'Google Drive settings saved' : 'Drive settings updated');
+            queuePendingDriveUploads();
         }
 
         function clearDriveConfig() {
@@ -3682,7 +3849,7 @@
             try {
                 const tokenClient = google.accounts.oauth2.initTokenClient({
                     client_id: clientId,
-                    scope: 'https://www.googleapis.com/auth/drive.file',
+                    scope: 'https://www.googleapis.com/auth/drive',
                     callback: (tokenResponse) => {
                         if (tokenResponse && tokenResponse.access_token) {
                             state.drive.accessToken = tokenResponse.access_token;
@@ -3705,16 +3872,19 @@
 
             const token = state.drive.accessToken;
             const q = encodeURIComponent(`name='${subfolderName.replace(/'/g, "\\'")}' and '${parentFolderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)`, {
+            const searchRes = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&supportsAllDrives=true&includeItemsFromAllDrives=true`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             const searchData = await searchRes.json();
+            if (!searchRes.ok) {
+                throw new Error(`Drive folder lookup failed (${searchRes.status}): ${searchData.error?.message || 'check folder access and OAuth permissions'}`);
+            }
             if (searchData.files && searchData.files.length > 0) {
                 state.drive.subfolderCache[cacheKey] = searchData.files[0].id;
                 return searchData.files[0].id;
             }
 
-            const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+            const createRes = await fetch('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
                 method: 'POST',
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -3724,56 +3894,68 @@
                 })
             });
             const created = await createRes.json();
-            if (!created.id) throw new Error('Failed to create vehicle subfolder');
+            if (!createRes.ok || !created.id) {
+                throw new Error(`Failed to create vehicle subfolder (${createRes.status}): ${created.error?.message || 'check folder access and OAuth permissions'}`);
+            }
             state.drive.subfolderCache[cacheKey] = created.id;
             return created.id;
+        }
+
+        function buildDriveMultipartBody(base64Data, metadata, boundary) {
+            const imageBytes = Uint8Array.from(atob(base64Data), character => character.charCodeAt(0));
+            const delimiter = `\r\n--${boundary}\r\n`;
+            const closeDelimiter = `\r\n--${boundary}--`;
+            return new Blob([
+                `--${boundary}\r\n`,
+                'Content-Type: application/json; charset=UTF-8\r\n\r\n',
+                JSON.stringify(metadata),
+                delimiter,
+                'Content-Type: image/jpeg\r\n\r\n',
+                imageBytes,
+                closeDelimiter
+            ], { type: `multipart/related; boundary=${boundary}` });
         }
 
         async function uploadPhotoToDrive(photoId) {
             const photo = state.photos.find(p => p.id === photoId);
             if (!photo) return false;
 
-            const d = state.drive;
-            const angleObj = CORE_ANGLES.find(a => a.id === photo.angleId);
-            const slugToUse = photo.customSlug || (angleObj ? angleObj.slug : null);
-            const filename = slugToUse ? buildPhotoFilename(slugToUse) : photo.filename;
-            const subfolder = buildZipFolderName();
-            const base64Data = photo.dataUrl.split(',')[1];
-
-            photo.driveStatus = 'uploading';
-            renderGallery();
-
             try {
-                if (d.authMode === 'webhook' && d.webhookUrl) {
+                const d = state.drive;
+                const angleObj = CORE_ANGLES.find(a => a.id === photo.angleId);
+                const slugToUse = photo.customSlug || (angleObj ? angleObj.slug : null);
+                const filename = slugToUse ? buildPhotoFilename(slugToUse) : photo.filename;
+                const subfolder = buildZipFolderName();
+                const base64Data = photo.dataUrl.split(',')[1];
+                if (!base64Data) throw new Error('Photo data is missing');
+
+                photo.driveStatus = 'uploading';
+                renderGallery();
+
+                if (d.authMode === 'webhook' && d.folderId && d.webhookUrl) {
                     await fetch(d.webhookUrl, {
                         method: 'POST',
                         mode: 'no-cors',
                         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                         body: JSON.stringify({ folderId: d.folderId, subfolder, filename, base64: base64Data })
                     });
-                    photo.driveStatus = 'uploaded';
+                    photo.driveStatus = 'sent';
                     renderGallery();
-                    return true;
+                    return 'sent';
                 } else if (d.authMode === 'oauth' && d.folderId && d.accessToken && Date.now() < d.tokenExpiresAt) {
                     const targetFolderId = await getOrCreateOAuthSubfolder(d.folderId, subfolder);
                     const boundary = 'autosnap_boundary_' + Date.now();
-                    const metadata = JSON.stringify({ name: filename, parents: [targetFolderId] });
-                    const multipartBody =
-                        `--${boundary}\r\n` +
-                        `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
-                        `${metadata}\r\n` +
-                        `--${boundary}\r\n` +
-                        `Content-Type: image/jpeg\r\n` +
-                        `Content-Transfer-Encoding: base64\r\n\r\n` +
-                        `${base64Data}\r\n` +
-                        `--${boundary}--`;
+                    const metadata = { name: filename, parents: [targetFolderId] };
+                    const multipartBody = buildDriveMultipartBody(base64Data, metadata, boundary);
 
-                    const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                    const uploadRes = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true', {
                         method: 'POST',
-                        headers: { Authorization: `Bearer ${d.accessToken}`, 'Content-Type': `multipart/related; boundary=${boundary}` },
+                        headers: { Authorization: `Bearer ${d.accessToken}`, 'Content-Type': multipartBody.type },
                         body: multipartBody
                     });
-                    if (!uploadRes.ok) throw new Error('Drive API upload failed');
+                    if (!uploadRes.ok) throw new Error(`Drive API upload failed (${uploadRes.status})`);
+                    const uploadedFile = await uploadRes.json();
+                    if (!uploadedFile.id) throw new Error('Drive API did not return an uploaded file ID');
                     photo.driveStatus = 'uploaded';
                     renderGallery();
                     return true;
@@ -3785,6 +3967,9 @@
             } catch (err) {
                 photo.driveStatus = 'error';
                 renderGallery();
+                console.error(`Drive upload failed for ${photo.filename}`, err);
+                const message = err && err.message ? err.message : 'check connection and Drive settings';
+                showToast(`Drive upload failed: ${message}`);
                 return false;
             }
         }
@@ -3804,14 +3989,20 @@
 
             btnLabel.textContent = 'Uploading...';
             let successCount = 0;
+            let sentCount = 0;
 
             for (const photo of targets) {
-                const ok = await uploadPhotoToDrive(photo.id);
-                if (ok) successCount++;
+                const result = await uploadPhotoToDrive(photo.id);
+                if (result === 'sent') sentCount++;
+                else if (result) successCount++;
             }
 
             btnLabel.textContent = 'Upload All to Drive';
-            showToast(`Uploaded ${successCount}/${targets.length} photos to Google Drive`);
+            if (state.drive.authMode === 'webhook') {
+                showToast(`Sent ${sentCount}/${targets.length} to Apps Script — verify in Drive`);
+            } else {
+                showToast(`Uploaded ${successCount}/${targets.length} photos to Google Drive`);
+            }
         }
 
         /* ============================================================================
