@@ -2761,7 +2761,7 @@
                 };
 
                 const s = shapes34[style] || shapes34.Sedan;
-                const shouldFlip = isRear ? !mirror : mirror;
+                const shouldFlip = mirror;
                 const flip = shouldFlip ? 'transform="translate(420,0) scale(-1,1)"' : '';
 
                 return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">

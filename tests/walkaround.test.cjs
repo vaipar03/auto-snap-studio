@@ -55,12 +55,19 @@ test('rear walkaround sketches show the rear fascia for both driver and passenge
     const rearPassenger = buildSilhouetteSvg('Sedan', 'exterior_rear', true);
     const rearDriver = buildSilhouetteSvg('Sedan', 'exterior_rear', false);
     const tailLampPath = 'M350 115 L368 118 L366 129 L350 126 Z';
+    const rearPassengerOption = html.match(/\{ key: 'e_rear_pass_24'[^}]*\}/);
+    const rearDriverOption = html.match(/\{ key: 'g_rear_driver_24'[^}]*\}/);
 
     assert.match(rearPassenger, /SEDAN PASSENGER SIDE REAR 3\/4/);
     assert.match(rearDriver, /SEDAN DRIVER SIDE REAR 3\/4/);
+    assert.ok(rearPassengerOption);
+    assert.ok(rearDriverOption);
+    assert.match(rearPassengerOption[0], /type: 'exterior_rear', mirror: true/);
+    assert.match(rearDriverOption[0], /type: 'exterior_rear', mirror: false/);
     assert.ok(rearPassenger.includes(tailLampPath));
     assert.ok(rearDriver.includes(tailLampPath));
-    assert.match(rearDriver, /transform="translate\(420,0\) scale\(-1,1\)"/);
+    assert.match(rearPassenger, /transform="translate\(420,0\) scale\(-1,1\)"/);
+    assert.doesNotMatch(rearDriver, /transform="translate\(420,0\) scale\(-1,1\)"/);
     assert.doesNotMatch(rearPassenger, /M56 128 C76 123 98 123 116 128/);
     assert.doesNotMatch(rearDriver, /M56 128 C76 123 98 123 116 128/);
 });
