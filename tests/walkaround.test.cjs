@@ -34,6 +34,37 @@ test('walkaround framing order matches the requested clockwise sequence', () => 
     assert.equal(new Set(options.map(([, key]) => key)).size, 8);
 });
 
+test('rear walkaround sketches show the rear fascia for both driver and passenger sides', () => {
+    const { target: buildSilhouetteSvg } = loadInlineFunction('buildSilhouetteSvg', {
+        state: { guideStyle: 'silhouette', outlinerLook: 'cad_sketch' },
+        window: { matchMedia: () => ({ matches: false }) },
+        VEHICLE_GUIDE_SCALE: 1,
+        VEHICLE_GUIDE_LANDSCAPE_SCALE: 1,
+        OUTLINER_LOOKS: [{
+            id: 'cad_sketch',
+            stroke: '#60a5fa',
+            secondary: '#e0f2fe',
+            subtle: 'rgba(147,197,253,0.38)',
+            accent: '#3b82f6',
+            groundBracket: '#3b82f6',
+            fillTop: 'rgba(59,130,246,0.10)',
+            dash: '',
+            glow: true
+        }]
+    });
+    const rearPassenger = buildSilhouetteSvg('Sedan', 'exterior_rear', true);
+    const rearDriver = buildSilhouetteSvg('Sedan', 'exterior_rear', false);
+    const tailLampPath = 'M350 115 L368 118 L366 129 L350 126 Z';
+
+    assert.match(rearPassenger, /SEDAN PASSENGER SIDE REAR 3\/4/);
+    assert.match(rearDriver, /SEDAN DRIVER SIDE REAR 3\/4/);
+    assert.ok(rearPassenger.includes(tailLampPath));
+    assert.ok(rearDriver.includes(tailLampPath));
+    assert.match(rearDriver, /transform="translate\(420,0\) scale\(-1,1\)"/);
+    assert.doesNotMatch(rearPassenger, /M56 128 C76 123 98 123 116 128/);
+    assert.doesNotMatch(rearDriver, /M56 128 C76 123 98 123 116 128/);
+});
+
 test('portrait camera header keeps an explicit return-to-setup action', () => {
     const backButton = html.match(/<button\s+id="camera-back-button"[\s\S]*?<\/button>/);
     assert.ok(backButton, 'camera back button should exist');

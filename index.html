@@ -2785,16 +2785,25 @@
                         <path d="${s.hoodCrease}" stroke="${subtle}" stroke-width="1.25" stroke-linecap="round"/>
                         <path d="${s.belt}" stroke="${subtle}" stroke-width="1.4" stroke-linecap="round"/>
                         <path d="${s.lowerSculpt}" stroke="${subtle}" stroke-width="1.5" stroke-linecap="round"/>
-                        <path d="${s.splitter}" stroke="${secondary}" stroke-width="1.6" stroke-linecap="round"/>
 
                         <!-- Wheel Arch Flares -->
                         <path d="M138 158 C138 122 196 118 198 156" stroke="${stroke}" stroke-width="2.1" ${dashAttr} stroke-linecap="round"/>
                         <path d="M294 148 C294 118 340 114 342 146" stroke="${stroke}" stroke-width="2.1" ${dashAttr} stroke-linecap="round"/>
 
-                        <!-- Grille, Headlights & Side Mirror -->
-                        <path d="${s.grille}" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round"/>
-                        <path d="${s.lightL}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
-                        <path d="${s.lightR}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
+                        ${isRear ? `
+                            <!-- Rear deck, tail lamps, license recess and bumper -->
+                            <path d="M330 102 L352 105 L365 111" stroke="${subtle}" stroke-width="1.35" stroke-linecap="round"/>
+                            <path d="M350 115 L368 118 L366 129 L350 126 Z" stroke="${coral}" stroke-width="2" stroke-linejoin="round"/>
+                            <path d="M353 120 L364 122" stroke="${coral}" stroke-width="1.2" stroke-linecap="round"/>
+                            <path d="M354 133 L366 134" stroke="${secondary}" stroke-width="1.3" stroke-linecap="round"/>
+                            <path d="M347 140 L369 142 M342 146 L369 146" stroke="${secondary}" stroke-width="1.6" stroke-linecap="round"/>
+                        ` : `
+                            <!-- Front splitter, grille, headlights and side mirror -->
+                            <path d="${s.splitter}" stroke="${secondary}" stroke-width="1.6" stroke-linecap="round"/>
+                            <path d="${s.grille}" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round"/>
+                            <path d="${s.lightL}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
+                            <path d="${s.lightR}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
+                        `}
                         <path d="M150 97 L137 91 L139 85 L154 90 Z" stroke="${stroke}" stroke-width="1.6"/>
 
                         <!-- Near-Side Perspective Wheel with CAD Crosshair -->
