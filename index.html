@@ -114,6 +114,9 @@
             }
         }
         @media (orientation: portrait) and (max-width: 639px) {
+            #setup-page-header {
+                padding-top: max(4.5rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+            }
             #camera-header {
                 flex-direction: column;
                 align-items: stretch;
