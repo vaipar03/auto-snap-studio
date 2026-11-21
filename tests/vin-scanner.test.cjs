@@ -26,3 +26,19 @@ test('rejects invalid VIN characters and VINs embedded in longer identifiers', (
     assert.equal(getVinFromBarcode(`X${vin}`), '');
     assert.equal(getVinFromBarcode(`${vin}X`), '');
 });
+
+test('extracts labeled and compact VIN barcode payload variants', () => {
+    assert.equal(getVinFromBarcode('VIN NO: 1HGCM82633A004352'), vin);
+    assert.equal(getVinFromBarcode('VEHICLE IDENTIFICATION NUMBER 1HGCM82633A004352'), vin);
+    assert.equal(getVinFromBarcode('1HGCM82633A004352\r\n'), vin);
+    assert.equal(getVinFromBarcode('WMI=1HGCM82633A004352'), vin);
+});
+
+test('scanner prefers VIN barcode formats and adds native BarcodeDetector fallback', () => {
+    assert.match(html, /POSSIBLE_FORMATS/);
+    assert.match(html, /CODE_128/);
+    assert.match(html, /CODE_39/);
+    assert.match(html, /PDF_417/);
+    assert.match(html, /BarcodeDetector/);
+    assert.match(html, /startNativeVinBarcodeDetection/);
+});

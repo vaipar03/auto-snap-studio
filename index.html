@@ -1036,7 +1036,7 @@
                     </button>
                 </div>
                 <p id="vin-scanner-status" role="status" aria-live="polite" class="min-h-10 text-xs text-zinc-300">Starting camera…</p>
-                <p class="text-[11px] text-zinc-500">Scanning requires HTTPS and camera permission. The rear camera is selected by default; use the camera switch if needed, or enter the VIN manually.</p>
+                <p class="text-[11px] text-zinc-500">Hold the barcode flat, fill the frame, and keep the camera 6–12 inches away. Scanning requires HTTPS and camera permission.</p>
             </div>
             <div class="flex justify-end gap-2 px-4 py-3 border-t border-zinc-800 bg-zinc-950/60">
                 <button onclick="closeVinScanner()" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 cursor-pointer transition">Cancel</button>
@@ -1148,6 +1148,10 @@
             vinScannerLibraryPromise: null,
             vinScannerAttempt: 0,
             vinScannerFacingMode: 'environment',
+            vinScannerNativeDetector: null,
+            vinScannerNativeFrame: null,
+            vinScannerCanvasReader: null,
+            vinScannerCanvasFrame: null,
             cameraVideoRotation: 0,
             fullscreenUnavailable: false,
             cameraImmersive: false,
@@ -1646,13 +1650,23 @@
 
         function getVinFromBarcode(rawValue) {
             const text = (rawValue || '').toUpperCase();
-            const matches = text.matchAll(/[A-HJ-NPR-Z0-9](?:[\s-]*[A-HJ-NPR-Z0-9]){16}/g);
-            for (const match of matches) {
-                const start = match.index;
-                const vin = match[0].replace(/[\s-]/g, '');
-                const before = start > 0 ? text[start - 1] : '';
-                const after = text[start + match[0].length] || '';
-                if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return vin;
+            const labeledText = text.replace(/^(?:VEHICLE[\s-]*(?:IDENTIFICATION[\s-]*)?(?:NUMBER)?|VIN(?:IFICATION)?[\s-]*(?:NUMBER|NO)?|WMI)[\s:/|_=]*/i, '');
+            const compact = labeledText.replace(/[\s\-:/|_=]+/g, '');
+            const vinPattern = /[A-HJ-NPR-Z0-9]{17}/g;
+            let match;
+            while ((match = vinPattern.exec(compact)) !== null) {
+                const before = match.index > 0 ? compact[match.index - 1] : '';
+                const after = compact[match.index + 17] || '';
+                if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return match[0];
+            }
+
+            const rawCompact = text.replace(/[\s\-:/|_=]+/g, '');
+            const vinStart = rawCompact.search(/[A-HJ-NPR-Z0-9]{17}/);
+            if (vinStart >= 0) {
+                const candidate = rawCompact.substr(vinStart, 17);
+                const before = vinStart > 0 ? rawCompact[vinStart - 1] : '';
+                const after = rawCompact[vinStart + 17] || '';
+                if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return candidate;
             }
             return '';
         }
@@ -1668,7 +1682,10 @@
                 video: {
                     facingMode: { ideal: state.vinScannerFacingMode },
                     width: { ideal: 1920 },
-                    height: { ideal: 1080 }
+                    height: { ideal: 1080 },
+                    advanced: [
+                        { focusMode: 'continuous' }
+                    ]
                 },
                 audio: false
             }).catch((error) => {
@@ -1684,6 +1701,16 @@
             const video = document.getElementById('vin-scanner-video');
             const stream = state.vinScannerStream || video.srcObject;
             state.vinScannerStream = null;
+            if (state.vinScannerNativeFrame) {
+                cancelAnimationFrame(state.vinScannerNativeFrame);
+                state.vinScannerNativeFrame = null;
+            }
+            state.vinScannerNativeDetector = null;
+            if (state.vinScannerCanvasFrame) {
+                clearTimeout(state.vinScannerCanvasFrame);
+                state.vinScannerCanvasFrame = null;
+            }
+            state.vinScannerCanvasReader = null;
             if (state.vinScannerReader) {
                 state.vinScannerReader.stopContinuousDecode();
                 state.vinScannerReader = null;
@@ -1703,6 +1730,130 @@
             state.vinScannerFacingMode = state.vinScannerFacingMode === 'environment' ? 'user' : 'environment';
             closeVinScanner();
             startVinScanner();
+        }
+
+        function decodeVinBarcodeFromVideoFrame(video, attempt, status) {
+            if (!window.ZXing
+                || !window.ZXing.HTMLCanvasElementLuminanceSource
+                || !window.ZXing.HybridBinarizer
+                || !window.ZXing.BinaryBitmap
+                || !window.ZXing.MultiFormatReader) return;
+
+            const hints = new Map();
+            hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+            if (window.ZXing.DecodeHintType.POSSIBLE_FORMATS && window.ZXing.BarcodeFormat) {
+                hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                    window.ZXing.BarcodeFormat.CODE_128,
+                    window.ZXing.BarcodeFormat.CODE_39,
+                    window.ZXing.BarcodeFormat.PDF_417,
+                    window.ZXing.BarcodeFormat.QR_CODE,
+                    window.ZXing.BarcodeFormat.DATA_MATRIX,
+                    window.ZXing.BarcodeFormat.AZTEC,
+                    window.ZXing.BarcodeFormat.CODABAR
+                ].filter(Boolean));
+            }
+
+            const reader = new window.ZXing.MultiFormatReader(hints);
+            state.vinScannerCanvasReader = reader;
+            const canvas = document.createElement('canvas');
+
+            const scanFrame = () => {
+                if (attempt !== state.vinScannerAttempt || state.vinScannerCanvasReader !== reader) return;
+                if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA || !video.videoWidth || !video.videoHeight) {
+                    state.vinScannerCanvasFrame = setTimeout(scanFrame, 500);
+                    return;
+                }
+
+                const regions = [
+                    { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight },
+                    { x: video.videoWidth * 0.08, y: video.videoHeight * 0.18, w: video.videoWidth * 0.84, h: video.videoHeight * 0.64 },
+                    { x: video.videoWidth * 0.18, y: video.videoHeight * 0.30, w: video.videoWidth * 0.64, h: video.videoHeight * 0.40 }
+                ];
+
+                for (const region of regions) {
+                    canvas.width = Math.max(320, Math.round(region.w));
+                    canvas.height = Math.max(180, Math.round(region.h));
+                    const context = canvas.getContext('2d', { willReadFrequently: true });
+                    context.drawImage(
+                        video,
+                        region.x,
+                        region.y,
+                        region.w,
+                        region.h,
+                        0,
+                        0,
+                        canvas.width,
+                        canvas.height
+                    );
+
+                    try {
+                        const luminance = new window.ZXing.HTMLCanvasElementLuminanceSource(canvas);
+                        const bitmap = new window.ZXing.BinaryBitmap(new window.ZXing.HybridBinarizer(luminance));
+                        const result = reader.decode(bitmap);
+                        const vin = getVinFromBarcode(result.getText());
+                        if (vin) {
+                            closeVinScanner();
+                            const input = document.getElementById('vin-input');
+                            input.value = vin;
+                            handleVinInput(vin);
+                            showToast('VIN scanned — decoding');
+                            return;
+                        }
+                    } catch (error) {
+                        // Try the next crop; continuous decode remains active.
+                    }
+                }
+                reader.reset();
+                state.vinScannerCanvasFrame = setTimeout(scanFrame, 350);
+            };
+            state.vinScannerCanvasFrame = setTimeout(scanFrame, 700);
+        }
+
+        function startNativeVinBarcodeDetection(video, attempt, status) {
+            if (!('BarcodeDetector' in window)) return;
+
+            let detector;
+            try {
+                detector = new BarcodeDetector({
+                    formats: ['code_128', 'code_39', 'pdf417', 'qr_code', 'data_matrix', 'aztec', 'codabar']
+                });
+            } catch (error) {
+                return;
+            }
+
+            state.vinScannerNativeDetector = detector;
+            let nativeDetectionBusy = false;
+            const scanFrame = async () => {
+                if (attempt !== state.vinScannerAttempt || state.vinScannerNativeDetector !== detector) return;
+                if (!nativeDetectionBusy && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+                    nativeDetectionBusy = true;
+                    try {
+                        const barcodes = await detector.detect(video);
+                        for (const barcode of barcodes) {
+                            const vin = getVinFromBarcode(barcode.rawValue);
+                            if (vin) {
+                                closeVinScanner();
+                                const input = document.getElementById('vin-input');
+                                input.value = vin;
+                                handleVinInput(vin);
+                                showToast('VIN scanned — decoding');
+                                return;
+                            }
+                            if (barcode.rawValue) {
+                                status.textContent = 'Code detected, but it does not contain a valid 17-character VIN. Keep scanning or enter it manually.';
+                            }
+                        }
+                    } catch (error) {
+                        // Native detection may briefly fail on orientation or frame changes; ZXing continues decoding.
+                    } finally {
+                        nativeDetectionBusy = false;
+                    }
+                }
+                if (attempt === state.vinScannerAttempt) {
+                    state.vinScannerNativeFrame = requestAnimationFrame(scanFrame);
+                }
+            };
+            state.vinScannerNativeFrame = requestAnimationFrame(scanFrame);
         }
 
         async function startVinScanner() {
@@ -1739,8 +1890,21 @@
 
                 const hints = new Map();
                 hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+                if (window.ZXing.DecodeHintType.POSSIBLE_FORMATS && window.ZXing.BarcodeFormat) {
+                    hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                        window.ZXing.BarcodeFormat.CODE_128,
+                        window.ZXing.BarcodeFormat.CODE_39,
+                        window.ZXing.BarcodeFormat.PDF_417,
+                        window.ZXing.BarcodeFormat.QR_CODE,
+                        window.ZXing.BarcodeFormat.DATA_MATRIX,
+                        window.ZXing.BarcodeFormat.AZTEC,
+                        window.ZXing.BarcodeFormat.CODABAR
+                    ].filter(Boolean));
+                }
                 const reader = new window.ZXing.BrowserMultiFormatReader(hints);
                 state.vinScannerReader = reader;
+                startNativeVinBarcodeDetection(video, attempt, status);
+                decodeVinBarcodeFromVideoFrame(video, attempt, status);
                 await reader.decodeFromStream(stream, video, (result) => {
                     if (!result || attempt !== state.vinScannerAttempt) return;
                     const vin = getVinFromBarcode(result.getText());
