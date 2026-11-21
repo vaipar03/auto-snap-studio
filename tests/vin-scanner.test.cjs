@@ -34,14 +34,18 @@ test('extracts labeled and compact VIN barcode payload variants', () => {
     assert.equal(getVinFromBarcode('WMI=1HGCM82633A004352'), vin);
 });
 
-test('scanner prefers VIN barcode formats and adds native BarcodeDetector fallback', () => {
+test('strips a leading Code 39 I prefix from the barcode payload', () => {
+    assert.equal(getVinFromBarcode('I1HGCM82633A004352'), vin);
+});
+
+test('scanner prefers VIN barcode formats and keeps decode work lightweight', () => {
     assert.match(html, /POSSIBLE_FORMATS/);
     assert.match(html, /CODE_128/);
     assert.match(html, /CODE_39/);
     assert.match(html, /PDF_417/);
     assert.match(html, /BarcodeDetector/);
-    assert.match(html, /startNativeVinBarcodeDetection/);
     assert.match(html, /Capture & Decode/);
     assert.match(html, /captureVinFrameNow/);
-    assert.match(html, /capabilities\.zoom/);
+    assert.doesNotMatch(html, /advanced:\s*\[\{\s*zoom/);
+    assert.match(html, /reader\.decodeFromStream\([\s\S]*?\.catch\(/);
 });
