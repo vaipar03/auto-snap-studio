@@ -596,7 +596,7 @@
                 </button>
                 <button onclick="cycleOutlinerLook()" id="outliner-look-btn" class="px-2 py-1 rounded-xl bg-sky-500/15 border border-sky-500/40 text-[11px] font-mono text-sky-300 hover:text-white cursor-pointer flex items-center gap-1" title="Switch Outliner Visual Style">
                     <i class="fa-solid fa-pen-nib text-[10px]"></i>
-                    <span id="outliner-look-label" class="hidden md:inline">Hybrid CAD</span>
+                    <span id="outliner-look-label" class="hidden md:inline">CAD Sketch</span>
                 </button>
                 <button onclick="cycleGuideStyle()" id="guide-toggle-btn" class="px-2 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-[11px] font-mono text-emerald-300 hover:text-white cursor-pointer flex items-center gap-1" title="Switch Viewfinder Guide Mode">
                     <i class="fa-solid fa-crop-simple text-[10px]"></i>
@@ -1036,10 +1036,11 @@
                     </button>
                 </div>
                 <p id="vin-scanner-status" role="status" aria-live="polite" class="min-h-10 text-xs text-zinc-300">Starting camera…</p>
-                <p class="text-[11px] text-zinc-500">Scanning requires HTTPS and camera permission. The rear camera is selected by default; use the camera switch if needed, or enter the VIN manually.</p>
+                <p class="text-[11px] text-zinc-500">Hold the barcode flat, fill the frame, and keep the camera 6–12 inches away. Scanning requires HTTPS and camera permission.</p>
             </div>
             <div class="flex justify-end gap-2 px-4 py-3 border-t border-zinc-800 bg-zinc-950/60">
                 <button onclick="closeVinScanner()" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 cursor-pointer transition">Cancel</button>
+                <button id="vin-capture-decode-btn" onclick="captureVinFrameNow()" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white cursor-pointer transition">Capture & Decode</button>
                 <button onclick="closeVinScanner(true)" class="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white cursor-pointer transition">Enter VIN Manually</button>
             </div>
         </div>
@@ -1114,6 +1115,7 @@
         const STORAGE_DRIVE_KEY = 'autosnap_drive_config';
         const STORAGE_SHUTTER_POS_KEY = 'autosnap_shutter_pos_v1';
         const VIN_SCANNER_SCRIPT_URL = 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js';
+        const VIN_OCR_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
         let driveUploadQueue = Promise.resolve();
         const queuedDriveUploadIds = new Set();
 
@@ -1148,6 +1150,8 @@
             vinScannerLibraryPromise: null,
             vinScannerAttempt: 0,
             vinScannerFacingMode: 'environment',
+            vinScannerCanvas: null,
+            vinScannerOcrPromise: null,
             cameraVideoRotation: 0,
             fullscreenUnavailable: false,
             cameraImmersive: false,
@@ -1619,6 +1623,30 @@
             }
         }
 
+        function loadVinOcrLibrary() {
+            if (window.Tesseract && window.Tesseract.recognize) return Promise.resolve();
+            if (state.vinScannerOcrPromise) return state.vinScannerOcrPromise;
+
+            state.vinScannerOcrPromise = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = VIN_OCR_SCRIPT_URL;
+                script.async = true;
+                script.onload = () => {
+                    if (window.Tesseract && window.Tesseract.recognize) resolve();
+                    else reject(new Error('VIN OCR library did not initialize'));
+                };
+                script.onerror = () => {
+                    script.remove();
+                    reject(new Error('VIN OCR library could not be loaded'));
+                };
+                document.head.appendChild(script);
+            }).catch((error) => {
+                state.vinScannerOcrPromise = null;
+                throw error;
+            });
+            return state.vinScannerOcrPromise;
+        }
+
         function loadVinScannerLibrary() {
             if (window.ZXing && window.ZXing.BrowserMultiFormatReader) return Promise.resolve();
             if (state.vinScannerLibraryPromise) return state.vinScannerLibraryPromise;
@@ -1644,15 +1672,42 @@
             return state.vinScannerLibraryPromise;
         }
 
+        function getVinFromOcrText(rawValue) {
+            const normalized = (rawValue || '')
+                .toUpperCase()
+                .replace(/O/g, '0')
+                .replace(/Q/g, '0')
+                .replace(/I/g, '1')
+                .replace(/[^A-HJ-NPR-Z0-9]/g, '');
+            return getVinFromBarcode(normalized);
+        }
+
         function getVinFromBarcode(rawValue) {
             const text = (rawValue || '').toUpperCase();
-            const matches = text.matchAll(/[A-HJ-NPR-Z0-9](?:[\s-]*[A-HJ-NPR-Z0-9]){16}/g);
-            for (const match of matches) {
-                const start = match.index;
-                const vin = match[0].replace(/[\s-]/g, '');
-                const before = start > 0 ? text[start - 1] : '';
-                const after = text[start + match[0].length] || '';
-                if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return vin;
+            let compact = text
+                .replace(/[*]/g, '')
+                .replace(/^(?:VEHICLE[\s-]*(?:IDENTIFICATION[\s-]*)?(?:NUMBER)?|VIN(?:IFICATION)?[\s-]*(?:NUMBER|NO)?|WMI)[\s:/|_=]*/i, '')
+                .replace(/[^A-HJ-NPR-Z0-9]/g, '');
+
+            if (compact.startsWith('I') && /^[A-HJ-NPR-Z0-9]{17}$/.test(compact.slice(1))) {
+                return compact.slice(1);
+            }
+
+            const vinPattern = /[A-HJ-NPR-Z0-9]{17}/g;
+            let match;
+            while ((match = vinPattern.exec(compact)) !== null) {
+                const before = match.index > 0 ? compact[match.index - 1] : '';
+                const after = compact[match.index + 17] || '';
+                if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return match[0];
+            }
+
+            const rawCompact = text.replace(/[\s\-:/|_=]+/g, '');
+            const vinStart = rawCompact.search(/[A-HJ-NPR-Z0-9]{17}/);
+            if (vinStart >= 0) {
+                const candidate = rawCompact.substr(vinStart, 17);
+                const before = vinStart > 0 ? rawCompact[vinStart - 1] : '';
+                const after = rawCompact[vinStart + 17] || '';
+                if (!/[A-Z0-9]/.test(before) && !/[A-Z0-9]/.test(after)) return candidate;
             }
             return '';
         }
@@ -1684,6 +1739,7 @@
             const video = document.getElementById('vin-scanner-video');
             const stream = state.vinScannerStream || video.srcObject;
             state.vinScannerStream = null;
+            state.vinScannerCanvas = null;
             if (state.vinScannerReader) {
                 state.vinScannerReader.stopContinuousDecode();
                 state.vinScannerReader = null;
@@ -1693,6 +1749,11 @@
             video.srcObject = null;
             applyVideoOrientation(video, document.getElementById('vin-scanner-viewfinder'));
             document.getElementById('vin-scanner-modal').classList.add('hidden');
+            const captureButton = document.getElementById('vin-capture-decode-btn');
+            if (captureButton) {
+                captureButton.disabled = false;
+                captureButton.textContent = 'Capture & Decode';
+            }
             if (focusVinInput) {
                 document.getElementById('vin-input').focus();
             }
@@ -1703,6 +1764,152 @@
             state.vinScannerFacingMode = state.vinScannerFacingMode === 'environment' ? 'user' : 'environment';
             closeVinScanner();
             startVinScanner();
+        }
+
+        async function captureVinFrameNow() {
+            const video = document.getElementById('vin-scanner-video');
+            const status = document.getElementById('vin-scanner-status');
+            const button = document.getElementById('vin-capture-decode-btn');
+            if (!video.videoWidth || !video.videoHeight) {
+                status.textContent = 'Camera is still starting. Hold steady and try Capture & Decode again.';
+                return;
+            }
+
+            button.disabled = true;
+            button.textContent = 'Scanning…';
+            status.textContent = 'Capturing and trying full frame, barcode crops, and contrast variants…';
+
+            if ('BarcodeDetector' in window) {
+                try {
+                    const detector = new BarcodeDetector({
+                        formats: ['code_128', 'code_39', 'pdf417', 'qr_code', 'data_matrix', 'aztec', 'codabar']
+                    });
+                    const barcodes = await detector.detect(video);
+                    for (const barcode of barcodes) {
+                        const vin = getVinFromBarcode(barcode.rawValue);
+                        if (vin) {
+                            closeVinScanner();
+                            const input = document.getElementById('vin-input');
+                            input.value = vin;
+                            handleVinInput(vin);
+                            showToast('VIN scanned — decoding');
+                            return;
+                        }
+                    }
+                } catch (error) {}
+            }
+
+            try {
+                await loadVinOcrLibrary();
+                const canvas = state.vinScannerCanvas || document.createElement('canvas');
+                state.vinScannerCanvas = canvas;
+                const context = canvas.getContext('2d', { willReadFrequently: true });
+                const ocrRegions = [
+                    { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight },
+                    { x: video.videoWidth * 0.12, y: video.videoHeight * 0.20, w: video.videoWidth * 0.76, h: video.videoHeight * 0.60 },
+                    { x: video.videoWidth * 0.25, y: video.videoHeight * 0.34, w: video.videoWidth * 0.50, h: video.videoHeight * 0.32 }
+                ];
+
+                for (const region of ocrRegions) {
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    canvas.width = 1600;
+                    canvas.height = 900;
+                    context.fillStyle = '#fff';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(video, region.x, region.y, region.w, region.h, 0, 0, canvas.width, canvas.height);
+                    const ocr = await window.Tesseract.recognize(canvas, 'eng', {
+                        tessedit_char_whitelist: 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789'
+                    });
+                    const vin = getVinFromOcrText(ocr && ocr.data && ocr.data.text ? ocr.data.text : '');
+                    if (vin) {
+                        closeVinScanner();
+                        const input = document.getElementById('vin-input');
+                        input.value = vin;
+                        handleVinInput(vin);
+                        showToast('VIN read from label — decoding');
+                        return;
+                    }
+                }
+            } catch (error) {
+                status.textContent = 'VIN barcode not detected yet. Trying barcode and label text again…';
+            }
+
+            if (window.ZXing
+                && window.ZXing.HTMLCanvasElementLuminanceSource
+                && window.ZXing.HybridBinarizer
+                && window.ZXing.BinaryBitmap
+                && window.ZXing.MultiFormatReader) {
+                const hints = new Map();
+                hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+                if (window.ZXing.DecodeHintType.POSSIBLE_FORMATS && window.ZXing.BarcodeFormat) {
+                    hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                        window.ZXing.BarcodeFormat.CODE_128,
+                        window.ZXing.BarcodeFormat.CODE_39,
+                        window.ZXing.BarcodeFormat.PDF_417,
+                        window.ZXing.BarcodeFormat.QR_CODE,
+                        window.ZXing.BarcodeFormat.DATA_MATRIX,
+                        window.ZXing.BarcodeFormat.AZTEC,
+                        window.ZXing.BarcodeFormat.CODABAR
+                    ].filter(Boolean));
+                }
+
+                const canvas = state.vinScannerCanvas || document.createElement('canvas');
+                state.vinScannerCanvas = canvas;
+                const context = canvas.getContext('2d', { willReadFrequently: true });
+                const crops = [
+                    { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight },
+                    { x: video.videoWidth * 0.08, y: video.videoHeight * 0.18, w: video.videoWidth * 0.84, h: video.videoHeight * 0.64 },
+                    { x: video.videoWidth * 0.18, y: video.videoHeight * 0.28, w: video.videoWidth * 0.64, h: video.videoHeight * 0.44 },
+                    { x: video.videoWidth * 0.28, y: video.videoHeight * 0.34, w: video.videoWidth * 0.44, h: video.videoHeight * 0.32 },
+                    { x: video.videoWidth * 0.34, y: video.videoHeight * 0.38, w: video.videoWidth * 0.32, h: video.videoHeight * 0.24 }
+                ];
+
+                for (const crop of crops) {
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    canvas.width = 1600;
+                    canvas.height = 900;
+                    context.fillStyle = '#fff';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+
+                    for (const invert of [false, true]) {
+                        if (invert) {
+                            const pixels = context.getImageData(0, 0, canvas.width, canvas.height);
+                            for (let i = 0; i < pixels.data.length; i += 4) {
+                                pixels.data[i] = 255 - pixels.data[i];
+                                pixels.data[i + 1] = 255 - pixels.data[i + 1];
+                                pixels.data[i + 2] = 255 - pixels.data[i + 2];
+                            }
+                            context.putImageData(pixels, 0, 0);
+                        }
+
+                        try {
+                            const reader = new window.ZXing.MultiFormatReader(hints);
+                            const luminance = new window.ZXing.HTMLCanvasElementLuminanceSource(canvas);
+                            const bitmap = new window.ZXing.BinaryBitmap(new window.ZXing.HybridBinarizer(luminance));
+                            const result = reader.decode(bitmap);
+                            const vin = getVinFromBarcode(result.getText());
+                            if (vin) {
+                                closeVinScanner();
+                                const input = document.getElementById('vin-input');
+                                input.value = vin;
+                                handleVinInput(vin);
+                                showToast('VIN scanned — decoding');
+                                return;
+                            }
+                        } catch (error) {}
+                        if (invert) {
+                            context.fillStyle = '#fff';
+                            context.fillRect(0, 0, canvas.width, canvas.height);
+                            context.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+                        }
+                    }
+                }
+            }
+
+            button.disabled = false;
+            button.textContent = 'Capture & Decode';
+            status.textContent = 'No readable VIN found. Move closer, keep the barcode flat, and try again—or enter the VIN manually.';
         }
 
         async function startVinScanner() {
@@ -1739,9 +1946,22 @@
 
                 const hints = new Map();
                 hints.set(window.ZXing.DecodeHintType.TRY_HARDER, true);
+                if (window.ZXing.DecodeHintType.POSSIBLE_FORMATS && window.ZXing.BarcodeFormat) {
+                    hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+                        window.ZXing.BarcodeFormat.CODE_128,
+                        window.ZXing.BarcodeFormat.CODE_39,
+                        window.ZXing.BarcodeFormat.PDF_417,
+                        window.ZXing.BarcodeFormat.QR_CODE,
+                        window.ZXing.BarcodeFormat.DATA_MATRIX,
+                        window.ZXing.BarcodeFormat.AZTEC,
+                        window.ZXing.BarcodeFormat.CODABAR
+                    ].filter(Boolean));
+                }
                 const reader = new window.ZXing.BrowserMultiFormatReader(hints);
                 state.vinScannerReader = reader;
-                await reader.decodeFromStream(stream, video, (result) => {
+                updateCameraVideoOrientation();
+                status.textContent = `Point the ${state.vinScannerFacingMode === 'environment' ? 'rear' : 'front'} camera at a VIN barcode or QR code.`;
+                reader.decodeFromStream(stream, video, (result) => {
                     if (!result || attempt !== state.vinScannerAttempt) return;
                     const vin = getVinFromBarcode(result.getText());
                     if (!vin) {
@@ -1754,16 +1974,13 @@
                     input.value = vin;
                     handleVinInput(vin);
                     showToast('VIN scanned — decoding');
+                }).catch((error) => {
+                    if (attempt !== state.vinScannerAttempt) return;
+                    if (state.vinScannerReader === reader) {
+                        state.vinScannerReader = null;
+                    }
+                    status.textContent = 'Continuous scanning stopped. Use Capture & Decode or enter the VIN manually.';
                 });
-
-                if (attempt !== state.vinScannerAttempt) {
-                    reader.stopContinuousDecode();
-                    stopVinScannerStream(stream);
-                    if (state.vinScannerStream === stream) state.vinScannerStream = null;
-                    return;
-                }
-                updateCameraVideoOrientation();
-                status.textContent = `Point the ${state.vinScannerFacingMode === 'environment' ? 'rear' : 'front'} camera at a VIN barcode or QR code.`;
             } catch (error) {
                 if (attempt === state.vinScannerAttempt && state.vinScannerReader) {
                     state.vinScannerReader.stopContinuousDecode();
@@ -1937,7 +2154,8 @@
             { id: 'cad_sketch', label: 'CAD Sketch', stroke: '#60a5fa', secondary: '#e0f2fe', subtle: 'rgba(147,197,253,0.38)', accent: '#3b82f6', groundBracket: '#3b82f6', fillTop: 'rgba(59,130,246,0.10)', dash: '', glow: true },
             { id: 'designer_pen', label: 'Designer Pen', stroke: '#ffffff', secondary: '#fbbf24', subtle: 'rgba(255,255,255,0.32)', accent: '#fbbf24', groundBracket: '#fbbf24', fillTop: 'rgba(251,191,36,0.06)', dash: '7 3', glow: false },
             { id: 'studio_mask', label: 'Studio Mask', stroke: 'rgba(255,255,255,0.88)', secondary: 'rgba(255,255,255,0.65)', subtle: 'rgba(255,255,255,0.22)', accent: '#a7f3d0', groundBracket: 'rgba(255,255,255,0.85)', fillTop: 'rgba(255,255,255,0.14)', dash: '', glow: false },
-            { id: 'neon_laser', label: 'Neon Laser', stroke: '#34d399', secondary: '#ffffff', subtle: 'rgba(52,211,153,0.40)', accent: '#fbbf24', groundBracket: '#34d399', fillTop: 'rgba(52,211,153,0.14)', dash: '', glow: true }
+            { id: 'neon_laser', label: 'Neon Laser', stroke: '#34d399', secondary: '#ffffff', subtle: 'rgba(52,211,153,0.40)', accent: '#fbbf24', groundBracket: '#34d399', fillTop: 'rgba(52,211,153,0.14)', dash: '', glow: true },
+            { id: 'modern_sketch', label: 'Modern Sketch', stroke: '#e2e8f0', secondary: '#a5f3fc', subtle: 'rgba(148,163,184,0.42)', accent: '#22d3ee', groundBracket: 'rgba(148,163,184,0.48)', fillTop: 'rgba(34,211,238,0.08)', dash: '', glow: false }
         ];
 
         function cycleOutlinerLook() {
@@ -2363,6 +2581,7 @@
             const vehicleGuideViewBox = scalesVehicleGuide && isLandscape ? '-28 0 476 230' : '0 0 420 230';
             const vehicleGuideTransform = `translate(210 115) scale(${vehicleGuideScale}) translate(-210 -115)`;
             const look = OUTLINER_LOOKS.find(o => o.id === state.outlinerLook) || OUTLINER_LOOKS[0];
+            const isModernSketch = look.id === 'modern_sketch';
             const stroke = look.stroke;
             const secondary = look.secondary || stroke;
             const subtle = look.subtle;
@@ -2411,7 +2630,7 @@
                 const leftY = 156;
                 const rightX = isSide ? 312 : 318;
                 const rightY = isSide ? 156 : 146;
-                const flipAttr = (is34 && (angleType === 'exterior_rear' ? !mirror : mirror)) || (isSide && mirror)
+                const flipAttr = ((is34 || isSide) && mirror)
                     ? 'transform="translate(420,0) scale(-1,1)"'
                     : '';
 
@@ -2482,18 +2701,20 @@
                         </feMerge>
                     </filter>
                 </defs>
-                ${showDraftingGrid ? `<rect x="20" y="26" width="380" height="182" rx="8" fill="url(#cadSubGrid)"/>` : ''}
-                <!-- Technical CAD Symmetry & Rule-of-Thirds Axes -->
-                <line x1="140" y1="28" x2="140" y2="206" stroke="${gridMajor}" stroke-width="1"/>
-                <line x1="280" y1="28" x2="280" y2="206" stroke="${gridMajor}" stroke-width="1"/>
-                <line x1="24" y1="86" x2="396" y2="86" stroke="${gridMajor}" stroke-width="1"/>
-                <line x1="24" y1="150" x2="396" y2="150" stroke="${gridMajor}" stroke-width="1"/>
-                <line x1="210" y1="28" x2="210" y2="206" stroke="${subtle}" stroke-width="0.9" stroke-dasharray="3 5"/>
-                <!-- Precision CAD Corner Brackets -->
-                <path d="M18 44 L18 26 L38 26" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
-                <path d="M402 44 L402 26 L382 26" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
-                <path d="M18 190 L18 208 L38 208" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
-                <path d="M402 190 L402 208 L382 208" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
+                ${showDraftingGrid && !isModernSketch ? `<rect x="20" y="26" width="380" height="182" rx="8" fill="url(#cadSubGrid)"/>` : ''}
+                ${!isModernSketch ? `
+                    <!-- Technical CAD symmetry and rule-of-thirds axes -->
+                    <line x1="140" y1="28" x2="140" y2="206" stroke="${gridMajor}" stroke-width="1"/>
+                    <line x1="280" y1="28" x2="280" y2="206" stroke="${gridMajor}" stroke-width="1"/>
+                    <line x1="24" y1="86" x2="396" y2="86" stroke="${gridMajor}" stroke-width="1"/>
+                    <line x1="24" y1="150" x2="396" y2="150" stroke="${gridMajor}" stroke-width="1"/>
+                    <line x1="210" y1="28" x2="210" y2="206" stroke="${subtle}" stroke-width="0.9" stroke-dasharray="3 5"/>
+                    <!-- Precision CAD corner brackets -->
+                    <path d="M18 44 L18 26 L38 26" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M402 44 L402 26 L382 26" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M18 190 L18 208 L38 208" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
+                    <path d="M402 190 L402 208 L382 208" stroke="${secondary}" stroke-opacity="0.6" stroke-width="1.8" stroke-linecap="round"/>
+                ` : ''}
                 <!-- Top Telemetry Pill -->
                 <rect x="64" y="8" width="292" height="17" rx="8.5" fill="rgba(9,9,11,0.74)" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
                 <circle cx="76" cy="16.5" r="2.5" fill="${accent}"/>
@@ -2760,29 +2981,139 @@
                     }
                 };
 
-                const s = shapes34[style] || shapes34.Sedan;
+                const rearShapes34 = {
+                    Sedan: {
+                        cabin: 'M124 104 C143 77 163 59 193 58 L264 60 C291 62 311 79 330 100',
+                        window: 'M141 100 C157 78 174 66 194 66 L211 66 L210 99 Z M218 66 L263 67 C282 69 298 83 311 100 L218 99 Z',
+                        doorShut: 'M214 66 L214 150 M281 69 L278 146',
+                        handles: 'M197 111 L210 110 M260 109 L273 108',
+                        body: 'M43 145 C41 129 46 117 64 110 L130 102 L326 98 C350 99 365 109 372 127 L374 145 C331 151 286 153 240 154 L138 157 C101 156 66 152 43 145',
+                        belt: 'M132 111 C207 108 284 105 359 107',
+                        lowerSculpt: 'M198 148 L294 142',
+                        rearFace: 'M44 120 L64 111 L130 102 L130 144 C101 150 70 150 44 145 Z',
+                        rearGlass: 'M72 111 L119 106 L120 120 L70 126 Z',
+                        tailgate: 'M67 126 L122 120 L122 140 L66 143 Z'
+                    },
+                    Hatchback: {
+                        cabin: 'M120 103 C140 73 162 55 194 54 L284 55 C307 57 326 77 342 100',
+                        window: 'M137 100 C153 76 171 63 193 62 L214 63 L213 99 Z M221 63 L282 64 C304 67 320 82 331 99 L221 99 Z',
+                        doorShut: 'M217 63 L216 150 M294 66 L290 146',
+                        handles: 'M199 111 L212 110 M274 108 L287 108',
+                        body: 'M42 146 C40 128 46 116 64 109 L127 101 L337 98 C357 100 370 113 374 132 L374 146 C332 152 286 154 239 155 L137 157 C100 157 66 153 42 146',
+                        belt: 'M130 110 C207 107 289 105 362 108',
+                        lowerSculpt: 'M198 149 L294 143',
+                        rearFace: 'M43 119 L64 109 L132 101 L132 145 C100 151 69 151 43 146 Z',
+                        rearGlass: 'M72 110 L122 104 L123 120 L70 127 Z',
+                        tailgate: 'M67 127 L125 120 L125 141 L66 144 Z'
+                    },
+                    SUV: {
+                        cabin: 'M116 106 C133 74 152 52 183 50 L308 52 C329 54 343 75 351 103',
+                        window: 'M132 102 C147 75 163 60 187 59 L211 60 L210 102 Z M218 60 L271 61 L271 100 L218 102 Z M278 62 L306 63 C324 66 336 82 342 101 L278 101 Z',
+                        doorShut: 'M214 60 L214 151 M275 62 L273 148',
+                        handles: 'M196 113 L209 112 M252 110 L266 110',
+                        body: 'M42 148 C40 126 48 113 68 108 L128 99 L344 102 C362 104 372 116 375 133 L375 148 C333 154 286 156 239 156 L138 159 C100 159 66 155 42 148',
+                        belt: 'M130 109 C210 108 291 108 365 112',
+                        lowerSculpt: 'M198 151 L294 145',
+                        rearFace: 'M42 117 L66 108 L130 99 L130 147 C98 153 66 153 42 148 Z',
+                        rearGlass: 'M72 108 L120 102 L122 123 L69 130 Z',
+                        tailgate: 'M66 130 L124 122 L124 143 L65 146 Z'
+                    },
+                    Van: {
+                        cabin: 'M112 108 C129 66 151 42 181 41 L331 43 C349 45 360 66 366 99',
+                        window: 'M132 103 C146 70 163 49 186 48 L213 49 L212 103 Z M220 49 L273 50 L273 101 L220 103 Z M281 51 L326 52 C342 57 352 75 358 99 L281 101 Z',
+                        doorShut: 'M216 49 L216 152 M278 51 L276 149',
+                        handles: 'M198 115 L211 114 M255 112 L269 112',
+                        body: 'M42 150 C40 124 48 111 66 106 L126 99 L352 95 C369 98 376 114 378 134 L378 150 C334 156 286 158 238 158 L137 160 C100 160 66 157 42 150',
+                        belt: 'M128 108 L369 105',
+                        lowerSculpt: 'M198 153 L294 147',
+                        rearFace: 'M42 116 L65 106 L128 99 L128 149 C98 155 66 155 42 150 Z',
+                        rearGlass: 'M69 106 L118 100 L119 126 L67 133 Z',
+                        tailgate: 'M64 133 L121 125 L121 146 L64 148 Z'
+                    },
+                    Pickup: {
+                        cabin: 'M225 103 L240 69 C250 57 265 52 285 52 L324 54 L342 100',
+                        window: 'M245 99 L255 69 C264 61 274 59 286 59 L290 99 Z M297 59 L319 60 L335 98 L297 99 Z',
+                        doorShut: 'M293 59 L293 149 M340 99 L341 146',
+                        handles: 'M274 111 L286 110',
+                        body: 'M42 149 C40 125 48 112 66 107 L128 100 L260 98 L348 94 C365 98 374 113 376 132 L376 149 C335 155 287 157 239 157 L137 160 C100 159 66 156 42 149',
+                        belt: 'M130 109 L361 105',
+                        lowerSculpt: 'M198 153 L294 147',
+                        rearFace: 'M42 117 L65 107 L130 100 L130 148 C98 154 66 154 42 149 Z',
+                        rearGlass: 'M70 107 L119 101 L120 125 L68 132 Z',
+                        tailgate: 'M65 132 L123 124 L123 145 L64 148 Z'
+                    },
+                    Coupe: {
+                        cabin: 'M132 104 C155 81 180 65 213 63 C263 63 299 78 330 101',
+                        window: 'M151 101 C171 81 191 70 215 70 L244 70 L264 99 Z M252 71 C280 74 302 85 316 100 L271 100 Z',
+                        doorShut: 'M250 71 L255 148 M204 104 L205 150',
+                        handles: 'M231 114 L244 113',
+                        body: 'M43 145 C41 129 47 117 66 111 L132 103 L326 99 C350 100 365 110 372 127 L374 145 C331 151 286 153 240 154 L138 157 C101 156 66 152 43 145',
+                        belt: 'M134 112 C207 109 284 106 359 108',
+                        lowerSculpt: 'M198 148 L294 142',
+                        rearFace: 'M44 120 L66 111 L132 103 L132 144 C101 150 70 150 44 145 Z',
+                        rearGlass: 'M74 112 L122 107 L123 120 L72 126 Z',
+                        tailgate: 'M68 127 L125 120 L125 140 L67 143 Z'
+                    },
+                    Convertible: {
+                        cabin: 'M137 103 L171 75 L194 74 L219 99 M278 99 C290 84 309 84 323 100',
+                        window: 'M151 101 L177 79 L190 79 L170 102 Z M286 98 C296 89 307 89 316 99 Z',
+                        doorShut: 'M250 100 L254 148 M204 104 L205 150',
+                        handles: 'M231 114 L244 113',
+                        body: 'M43 145 C41 129 47 117 66 111 L132 103 L326 99 C350 100 365 110 372 127 L374 145 C331 151 286 153 240 154 L138 157 C101 156 66 152 43 145',
+                        belt: 'M134 112 C207 109 284 106 359 108',
+                        lowerSculpt: 'M198 148 L294 142',
+                        rearFace: 'M44 120 L66 111 L132 103 L132 144 C101 150 70 150 44 145 Z',
+                        rearGlass: 'M75 112 L121 107 L122 120 L73 126 Z',
+                        tailgate: 'M68 127 L125 120 L125 140 L67 143 Z'
+                    },
+                    Wagon: {
+                        cabin: 'M121 103 C141 75 161 57 193 56 L314 57 C333 59 344 78 352 100',
+                        window: 'M138 100 C154 77 172 64 194 64 L215 65 L214 100 Z M222 65 L286 65 L286 98 L222 100 Z M293 66 L318 67 C331 71 339 84 344 99 L293 99 Z',
+                        doorShut: 'M218 65 L217 150 M290 66 L287 146',
+                        handles: 'M199 111 L212 110 M270 109 L283 108',
+                        body: 'M42 146 C40 128 46 116 64 109 L128 101 L348 97 C364 100 371 112 374 130 L374 146 C332 152 286 154 239 155 L137 157 C100 157 66 153 42 146',
+                        belt: 'M131 110 C210 107 292 104 363 107',
+                        lowerSculpt: 'M198 149 L294 143',
+                        rearFace: 'M43 119 L65 109 L131 101 L131 145 C100 151 69 151 43 146 Z',
+                        rearGlass: 'M72 110 L121 104 L122 120 L70 127 Z',
+                        tailgate: 'M67 127 L124 120 L124 141 L66 144 Z'
+                    }
+                };
+                const s = isRear
+                    ? (rearShapes34[style] || rearShapes34.Sedan)
+                    : (shapes34[style] || shapes34.Sedan);
                 const shouldFlip = mirror;
                 const flip = shouldFlip ? 'transform="translate(420,0) scale(-1,1)"' : '';
+                const bracketFlip = isRear ? !mirror : mirror;
+                const bracketTransform = bracketFlip ? 'transform="translate(420,0) scale(-1,1)"' : '';
 
                 return `<svg viewBox="${vehicleGuideViewBox}" class="w-full h-full max-w-2xl" fill="none">
                     ${hudChrome(badgeText, false)}
                     <g transform="${vehicleGuideTransform}">
+                    ${isModernSketch ? `
+                        <path d="M44 188 Q210 181 376 188" stroke="${groundBracket}" stroke-width="1.5" stroke-opacity="0.48" stroke-linecap="round"/>
+                    ` : `
+                        <g ${bracketTransform}>
+                            <!-- Bold L-shaped ground and rear-corner anchor bracket -->
+                            <path d="M168 189 L378 164 L378 76" stroke="${groundBracket}" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" ${glowAttr}/>
+                            <circle cx="168" cy="189" r="3.5" fill="${secondary}"/>
+                            <circle cx="378" cy="164" r="3.5" fill="${secondary}"/>
+                            <circle cx="378" cy="76" r="3.5" fill="${secondary}"/>
+                        </g>
+                    `}
                     <g ${flip}>
-                        <!-- Bold L-Shaped Ground & Rear Corner Anchor Bracket (Sample 1 Signature) -->
-                        <path d="M168 189 L378 164 L378 76" stroke="${groundBracket}" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" ${glowAttr}/>
-                        <circle cx="168" cy="189" r="3.5" fill="${secondary}"/>
-                        <circle cx="378" cy="164" r="3.5" fill="${secondary}"/>
-                        <circle cx="378" cy="76" r="3.5" fill="${secondary}"/>
 
                         <!-- Sculpted Cabin & Main Body Wireframe -->
                         <path d="${s.cabin}" stroke="${stroke}" stroke-width="2.2" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" fill="url(#carBodyGrad)" ${glowAttr}/>
-                        <path d="${s.window}" stroke="${secondary}" stroke-width="1.35" stroke-linejoin="round"/>
+                        <path d="${s.window}" stroke="${secondary}" stroke-width="1.35" stroke-linejoin="round" fill="${isModernSketch ? 'rgba(34,211,238,0.07)' : 'none'}"/>
                         <path d="${s.doorShut}" stroke="${subtle}" stroke-width="1.2" stroke-linecap="round"/>
                         <path d="${s.handles}" stroke="${secondary}" stroke-width="1.8" stroke-linecap="round"/>
                         <path d="${s.body}" stroke="${stroke}" stroke-width="2.3" ${dashAttr} stroke-linecap="round" stroke-linejoin="round" fill="url(#carBodyGrad)" ${glowAttr}/>
 
-                        <!-- Hood Creases, Beltline & Lower Rocker Contour -->
-                        <path d="${s.hoodCrease}" stroke="${subtle}" stroke-width="1.25" stroke-linecap="round"/>
+                        <!-- Side shoulder, beltline & lower rocker contour -->
+                        ${isRear
+                            ? `<path d="M132 111 C205 105 286 102 358 105" stroke="${subtle}" stroke-width="1.25" stroke-linecap="round"/>`
+                            : `<path d="${s.hoodCrease}" stroke="${subtle}" stroke-width="1.25" stroke-linecap="round"/>`}
                         <path d="${s.belt}" stroke="${subtle}" stroke-width="1.4" stroke-linecap="round"/>
                         <path d="${s.lowerSculpt}" stroke="${subtle}" stroke-width="1.5" stroke-linecap="round"/>
 
@@ -2791,12 +3122,14 @@
                         <path d="M294 148 C294 118 340 114 342 146" stroke="${stroke}" stroke-width="2.1" ${dashAttr} stroke-linecap="round"/>
 
                         ${isRear ? `
-                            <!-- Rear deck, tail lamps, license recess and bumper -->
-                            <path d="M330 102 L352 105 L365 111" stroke="${subtle}" stroke-width="1.35" stroke-linecap="round"/>
-                            <path d="M350 115 L368 118 L366 129 L350 126 Z" stroke="${coral}" stroke-width="2" stroke-linejoin="round"/>
-                            <path d="M353 120 L364 122" stroke="${coral}" stroke-width="1.2" stroke-linecap="round"/>
-                            <path d="M354 133 L366 134" stroke="${secondary}" stroke-width="1.3" stroke-linecap="round"/>
-                            <path d="M347 140 L369 142 M342 146 L369 146" stroke="${secondary}" stroke-width="1.6" stroke-linecap="round"/>
+                            <!-- Angled rear plane, hatch glass, liftgate seam, lamps and bumper -->
+                            <path d="${s.rearFace}" stroke="${secondary}" stroke-width="2" stroke-linejoin="round" fill="rgba(15,23,42,0.28)" ${glowAttr}/>
+                            <path d="${s.rearGlass}" stroke="${secondary}" stroke-width="1.5" stroke-linejoin="round" fill="${isModernSketch ? 'rgba(34,211,238,0.12)' : 'none'}"/>
+                            <path d="${s.tailgate}" stroke="${secondary}" stroke-width="1.35" stroke-linejoin="round"/>
+                            <path d="M47 117 L64 113 L65 133 L48 135 Z M116 108 L132 103 L132 123 L115 128 Z" stroke="${coral}" stroke-width="2" stroke-linejoin="round" fill="${isModernSketch ? 'rgba(248,113,113,0.16)' : 'none'}"/>
+                            <path d="M51 122 L61 120 M119 114 L129 111" stroke="${coral}" stroke-width="1.15" stroke-linecap="round"/>
+                            <path d="M78 129 L105 125 L106 139 L78 142 Z" stroke="${secondary}" stroke-width="1.3" stroke-linejoin="round"/>
+                            <path d="M47 141 Q88 153 134 144" stroke="${secondary}" stroke-width="1.7" stroke-linecap="round"/>
                         ` : `
                             <!-- Front splitter, grille, headlights and side mirror -->
                             <path d="${s.splitter}" stroke="${secondary}" stroke-width="1.6" stroke-linecap="round"/>
@@ -2804,20 +3137,29 @@
                             <path d="${s.lightL}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
                             <path d="${s.lightR}" stroke="${lightColor}" stroke-width="2" stroke-linejoin="round"/>
                         `}
-                        <path d="M150 97 L137 91 L139 85 L154 90 Z" stroke="${stroke}" stroke-width="1.6"/>
+                        ${isRear
+                            ? `<path d="M349 101 L364 98 L368 104 L353 109 Z" stroke="${stroke}" stroke-width="1.6"/>`
+                            : `<path d="M150 97 L137 91 L139 85 L154 90 Z" stroke="${stroke}" stroke-width="1.6"/>`}
 
                         <!-- Near-Side Perspective Wheel with CAD Crosshair -->
-                        <ellipse cx="168" cy="154" rx="25" ry="31" transform="rotate(-7 168 154)" stroke="${secondary}" stroke-width="2.2" ${glowAttr}/>
-                        <ellipse cx="168" cy="154" rx="16" ry="20" transform="rotate(-7 168 154)" stroke="${stroke}" stroke-width="1.4"/>
-                        <line x1="152" y1="154" x2="184" y2="154" stroke="${subtle}" stroke-width="1.1"/>
-                        <line x1="168" y1="134" x2="168" y2="174" stroke="${subtle}" stroke-width="1.1"/>
-                        <ellipse cx="168" cy="154" rx="5" ry="7" transform="rotate(-7 168 154)" stroke="${stroke}" stroke-width="1.3"/>
-
-                        <!-- Far-Side Perspective Wheel with CAD Crosshair -->
-                        <ellipse cx="318" cy="144" rx="19" ry="25" transform="rotate(-5 318 144)" stroke="${secondary}" stroke-width="1.9"/>
-                        <ellipse cx="318" cy="144" rx="11" ry="15" transform="rotate(-5 318 144)" stroke="${stroke}" stroke-width="1.3"/>
-                        <line x1="306" y1="144" x2="330" y2="144" stroke="${subtle}" stroke-width="1"/>
-                        <line x1="318" y1="128" x2="318" y2="160" stroke="${subtle}" stroke-width="1"/>
+                        ${isModernSketch ? `
+                            <ellipse cx="168" cy="154" rx="25" ry="31" transform="rotate(-7 168 154)" stroke="${secondary}" stroke-width="2.2"/>
+                            <ellipse cx="168" cy="154" rx="15" ry="19" transform="rotate(-7 168 154)" stroke="${stroke}" stroke-width="1.5"/>
+                            <circle cx="168" cy="154" r="4" fill="${accent}"/>
+                            <ellipse cx="318" cy="144" rx="19" ry="25" transform="rotate(-5 318 144)" stroke="${secondary}" stroke-width="1.9"/>
+                            <ellipse cx="318" cy="144" rx="10" ry="14" transform="rotate(-5 318 144)" stroke="${stroke}" stroke-width="1.3"/>
+                            <circle cx="318" cy="144" r="3.2" fill="${accent}"/>
+                        ` : `
+                            <ellipse cx="168" cy="154" rx="25" ry="31" transform="rotate(-7 168 154)" stroke="${secondary}" stroke-width="2.2" ${glowAttr}/>
+                            <ellipse cx="168" cy="154" rx="16" ry="20" transform="rotate(-7 168 154)" stroke="${stroke}" stroke-width="1.4"/>
+                            <line x1="152" y1="154" x2="184" y2="154" stroke="${subtle}" stroke-width="1.1"/>
+                            <line x1="168" y1="134" x2="168" y2="174" stroke="${subtle}" stroke-width="1.1"/>
+                            <ellipse cx="168" cy="154" rx="5" ry="7" transform="rotate(-7 168 154)" stroke="${stroke}" stroke-width="1.3"/>
+                            <ellipse cx="318" cy="144" rx="19" ry="25" transform="rotate(-5 318 144)" stroke="${secondary}" stroke-width="1.9"/>
+                            <ellipse cx="318" cy="144" rx="11" ry="15" transform="rotate(-5 318 144)" stroke="${stroke}" stroke-width="1.3"/>
+                            <line x1="306" y1="144" x2="330" y2="144" stroke="${subtle}" stroke-width="1"/>
+                            <line x1="318" y1="128" x2="318" y2="160" stroke="${subtle}" stroke-width="1"/>
+                        `}
                     </g>
                     </g>
                 </svg>`;
