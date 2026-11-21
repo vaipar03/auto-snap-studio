@@ -56,3 +56,15 @@ test('scanner prefers VIN barcode formats and keeps decode work lightweight', ()
     assert.doesNotMatch(html, /advanced:\s*\[\{\s*zoom/);
     assert.match(html, /reader\.decodeFromStream\([\s\S]*?\.catch\(/);
 });
+
+test('VIN scanner includes three flashlight modes and landscape safe areas', () => {
+    assert.match(html, /id="vin-flash-off"/);
+    assert.match(html, /id="vin-flash-on"/);
+    assert.match(html, /id="vin-flash-auto"/);
+    assert.match(html, /setVinScannerTorchMode/);
+    assert.match(html, /vinScannerTorchMode/);
+    assert.match(html, /@media \(orientation: landscape\)[\s\S]*?#vin-scanner-panel/);
+    assert.match(html, /env\(safe-area-inset-(top|bottom)/);
+    assert.match(html, /handleVinScannerViewfinderTap/);
+    assert.match(html, /applyVinScannerAutoFocus/);
+});
