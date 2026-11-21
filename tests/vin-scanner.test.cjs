@@ -41,4 +41,7 @@ test('scanner prefers VIN barcode formats and adds native BarcodeDetector fallba
     assert.match(html, /PDF_417/);
     assert.match(html, /BarcodeDetector/);
     assert.match(html, /startNativeVinBarcodeDetection/);
+    assert.match(html, /Capture & Decode/);
+    assert.match(html, /captureVinFrameNow/);
+    assert.match(html, /capabilities\.zoom/);
 });
