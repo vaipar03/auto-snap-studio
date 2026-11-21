@@ -1066,6 +1066,7 @@
                 </button>
             </div>
             <div id="vin-scanner-content" class="p-4 space-y-3">
+                <input id="vin-photo-input" type="file" accept="image/*" capture="environment" onchange="handleVinPhotoCapture(event)" class="hidden">
                 <div id="vin-scanner-viewfinder" onclick="handleVinScannerViewfinderTap(event)" class="relative overflow-hidden rounded-xl bg-black aspect-[4/3] sm:aspect-video flex items-center justify-center cursor-crosshair">
                     <video id="vin-scanner-video" class="w-full h-full object-cover" autoplay muted playsinline></video>
                     <div class="absolute inset-5 border-2 border-sky-400/80 rounded-lg pointer-events-none"></div>
@@ -1084,6 +1085,7 @@
             </div>
             <div id="vin-scanner-actions" class="flex justify-end gap-2 px-4 py-3 border-t border-zinc-800 bg-zinc-950/60">
                 <button onclick="closeVinScanner()" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 cursor-pointer transition">Cancel</button>
+                <button onclick="document.getElementById('vin-photo-input').click()" class="px-3 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-xs font-bold text-white cursor-pointer transition">Choose Photo</button>
                 <button id="vin-capture-decode-btn" onclick="captureVinFrameNow()" class="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white cursor-pointer transition">Capture & Decode</button>
                 <button onclick="closeVinScanner(true)" class="px-3 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white cursor-pointer transition">Enter VIN Manually</button>
             </div>
@@ -1936,13 +1938,17 @@
             button.disabled = true;
             button.textContent = 'Scanning…';
             status.textContent = 'Capturing and trying full frame, barcode crops, and contrast variants…';
+            const orientedFrame = getOrientedCameraFrame(video, state.cameraVideoRotation);
+            const frameSource = orientedFrame.source;
+            const frameWidth = orientedFrame.width;
+            const frameHeight = orientedFrame.height;
 
             if ('BarcodeDetector' in window) {
                 try {
                     const detector = new BarcodeDetector({
                         formats: ['code_128', 'code_39', 'pdf417', 'qr_code', 'data_matrix', 'aztec', 'codabar']
                     });
-                    const barcodes = await detector.detect(video);
+                    const barcodes = await detector.detect(frameSource);
                     for (const barcode of barcodes) {
                         const vin = getVinFromBarcode(barcode.rawValue);
                         if (vin) {
@@ -1963,9 +1969,10 @@
                 state.vinScannerCanvas = canvas;
                 const context = canvas.getContext('2d', { willReadFrequently: true });
                 const ocrRegions = [
-                    { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight },
-                    { x: video.videoWidth * 0.12, y: video.videoHeight * 0.20, w: video.videoWidth * 0.76, h: video.videoHeight * 0.60 },
-                    { x: video.videoWidth * 0.25, y: video.videoHeight * 0.34, w: video.videoWidth * 0.50, h: video.videoHeight * 0.32 }
+                    { x: 0, y: 0, w: frameWidth, h: frameHeight },
+                    { x: frameWidth * 0.08, y: frameHeight * 0.28, w: frameWidth * 0.84, h: frameHeight * 0.44 },
+                    { x: frameWidth * 0.14, y: frameHeight * 0.34, w: frameWidth * 0.72, h: frameHeight * 0.28 },
+                    { x: frameWidth * 0.10, y: frameHeight * 0.42, w: frameWidth * 0.80, h: frameHeight * 0.22 }
                 ];
 
                 for (const region of ocrRegions) {
@@ -1974,7 +1981,7 @@
                     canvas.height = 1350;
                     context.fillStyle = '#fff';
                     context.fillRect(0, 0, canvas.width, canvas.height);
-                    context.drawImage(video, region.x, region.y, region.w, region.h, 0, 0, canvas.width, canvas.height);
+                    context.drawImage(frameSource, region.x, region.y, region.w, region.h, 0, 0, canvas.width, canvas.height);
 
                     const variants = ['normal', 'contrast', 'threshold'];
                     for (const variant of variants) {
@@ -2009,7 +2016,7 @@
                         if (variant === 'normal') continue;
                         context.fillStyle = '#fff';
                         context.fillRect(0, 0, canvas.width, canvas.height);
-                        context.drawImage(video, region.x, region.y, region.w, region.h, 0, 0, canvas.width, canvas.height);
+                        context.drawImage(frameSource, region.x, region.y, region.w, region.h, 0, 0, canvas.width, canvas.height);
                     }
                 }
             } catch (error) {
@@ -2039,11 +2046,11 @@
                 state.vinScannerCanvas = canvas;
                 const context = canvas.getContext('2d', { willReadFrequently: true });
                 const crops = [
-                    { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight },
-                    { x: video.videoWidth * 0.08, y: video.videoHeight * 0.18, w: video.videoWidth * 0.84, h: video.videoHeight * 0.64 },
-                    { x: video.videoWidth * 0.18, y: video.videoHeight * 0.28, w: video.videoWidth * 0.64, h: video.videoHeight * 0.44 },
-                    { x: video.videoWidth * 0.28, y: video.videoHeight * 0.34, w: video.videoWidth * 0.44, h: video.videoHeight * 0.32 },
-                    { x: video.videoWidth * 0.34, y: video.videoHeight * 0.38, w: video.videoWidth * 0.32, h: video.videoHeight * 0.24 }
+                    { x: 0, y: 0, w: frameWidth, h: frameHeight },
+                    { x: frameWidth * 0.08, y: frameHeight * 0.28, w: frameWidth * 0.84, h: frameHeight * 0.44 },
+                    { x: frameWidth * 0.14, y: frameHeight * 0.34, w: frameWidth * 0.72, h: frameHeight * 0.28 },
+                    { x: frameWidth * 0.10, y: frameHeight * 0.42, w: frameWidth * 0.80, h: frameHeight * 0.22 },
+                    { x: frameWidth * 0.18, y: frameHeight * 0.46, w: frameWidth * 0.64, h: frameHeight * 0.18 }
                 ];
 
                 for (const crop of crops) {
@@ -2052,7 +2059,7 @@
                     canvas.height = 900;
                     context.fillStyle = '#fff';
                     context.fillRect(0, 0, canvas.width, canvas.height);
-                    context.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+                    context.drawImage(frameSource, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
 
                     for (const invert of [false, true]) {
                         if (invert) {
@@ -2083,7 +2090,7 @@
                         if (invert) {
                             context.fillStyle = '#fff';
                             context.fillRect(0, 0, canvas.width, canvas.height);
-                            context.drawImage(video, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
+                            context.drawImage(frameSource, crop.x, crop.y, crop.w, crop.h, 0, 0, canvas.width, canvas.height);
                         }
                     }
                 }
