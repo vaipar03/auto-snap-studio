@@ -51,6 +51,16 @@ test('rear walkaround sketches use rear three-quarter geometry and correct side 
             fillTop: 'rgba(59,130,246,0.10)',
             dash: '',
             glow: true
+        }, {
+            id: 'modern_sketch',
+            stroke: '#e2e8f0',
+            secondary: '#a5f3fc',
+            subtle: 'rgba(148,163,184,0.42)',
+            accent: '#22d3ee',
+            groundBracket: 'rgba(148,163,184,0.48)',
+            fillTop: 'rgba(34,211,238,0.08)',
+            dash: '',
+            glow: false
         }]
     });
     const rearPassenger = buildSilhouetteSvg('Sedan', 'exterior_rear', true);
@@ -91,7 +101,17 @@ test('rear walkaround sketches use rear three-quarter geometry and correct side 
         assert.doesNotMatch(rearStyle, /undefined/);
     }
 
+    guideState.outlinerLook = 'modern_sketch';
+    const modernRear = buildSilhouetteSvg('Sedan', 'exterior_rear', true);
+    assert.match(html, /id: 'modern_sketch', label: 'Modern Sketch'/);
+    assert.match(modernRear, /M44 188 Q210 181 376 188/);
+    assert.match(modernRear, /rgba\(34,211,238,0\.12\)/);
+    assert.doesNotMatch(modernRear, /<rect x="20" y="26" width="380" height="182" rx="8" fill="url\(#cadSubGrid\)"/);
+    assert.doesNotMatch(modernRear, /M168 189 L378 164 L378 76/);
+    assert.doesNotMatch(modernRear, /x1="152" y1="154" x2="184" y2="154"/);
+
     guideState.guideStyle = 'wheel_anchors';
+    guideState.outlinerLook = 'cad_sketch';
     const rearPassengerAnchors = buildSilhouetteSvg('Sedan', 'exterior_rear', true);
     const rearDriverAnchors = buildSilhouetteSvg('Sedan', 'exterior_rear', false);
     assert.match(rearPassengerAnchors, /<g transform="translate\(420,0\) scale\(-1,1\)">/);
