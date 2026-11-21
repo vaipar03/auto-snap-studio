@@ -38,6 +38,11 @@ test('strips a leading Code 39 I prefix from the barcode payload', () => {
     assert.equal(getVinFromBarcode('I1HGCM82633A004352'), vin);
 });
 
+test('extracts the supplied WA1GCCFS6HR011411 door-jamb VIN', () => {
+    assert.equal(getVinFromBarcode('IWA1GCCFS6HR011411'), 'WA1GCCFS6HR011411');
+    assert.equal(getVinFromBarcode('WA1GCCFS6HR011411'), 'WA1GCCFS6HR011411');
+});
+
 test('OCR normalizes common VIN misreads and extracts the printed VIN', () => {
     assert.match(html, /function getVinFromOcrText/);
     assert.match(html, /replace\(\/O\/g, '0'\)/);
@@ -57,6 +62,8 @@ test('scanner prefers VIN barcode formats and keeps decode work lightweight', ()
     assert.match(html, /captureVinFrameNow/);
     assert.doesNotMatch(html, /advanced:\s*\[\{\s*zoom/);
     assert.match(html, /reader\.decodeFromStream\([\s\S]*?\.catch\(/);
+    assert.match(html, /getOrientedCameraFrame\(video, state\.cameraVideoRotation\)/);
+    assert.match(html, /barcode crops/);
 });
 
 test('VIN scanner includes three flashlight modes and landscape safe areas', () => {
