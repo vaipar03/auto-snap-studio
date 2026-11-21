@@ -1115,6 +1115,7 @@
         const STORAGE_DRIVE_KEY = 'autosnap_drive_config';
         const STORAGE_SHUTTER_POS_KEY = 'autosnap_shutter_pos_v1';
         const VIN_SCANNER_SCRIPT_URL = 'https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js';
+        const VIN_OCR_SCRIPT_URL = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
         let driveUploadQueue = Promise.resolve();
         const queuedDriveUploadIds = new Set();
 
@@ -1150,6 +1151,7 @@
             vinScannerAttempt: 0,
             vinScannerFacingMode: 'environment',
             vinScannerCanvas: null,
+            vinScannerOcrPromise: null,
             cameraVideoRotation: 0,
             fullscreenUnavailable: false,
             cameraImmersive: false,
@@ -1621,6 +1623,30 @@
             }
         }
 
+        function loadVinOcrLibrary() {
+            if (window.Tesseract && window.Tesseract.recognize) return Promise.resolve();
+            if (state.vinScannerOcrPromise) return state.vinScannerOcrPromise;
+
+            state.vinScannerOcrPromise = new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = VIN_OCR_SCRIPT_URL;
+                script.async = true;
+                script.onload = () => {
+                    if (window.Tesseract && window.Tesseract.recognize) resolve();
+                    else reject(new Error('VIN OCR library did not initialize'));
+                };
+                script.onerror = () => {
+                    script.remove();
+                    reject(new Error('VIN OCR library could not be loaded'));
+                };
+                document.head.appendChild(script);
+            }).catch((error) => {
+                state.vinScannerOcrPromise = null;
+                throw error;
+            });
+            return state.vinScannerOcrPromise;
+        }
+
         function loadVinScannerLibrary() {
             if (window.ZXing && window.ZXing.BrowserMultiFormatReader) return Promise.resolve();
             if (state.vinScannerLibraryPromise) return state.vinScannerLibraryPromise;
@@ -1644,6 +1670,16 @@
             });
 
             return state.vinScannerLibraryPromise;
+        }
+
+        function getVinFromOcrText(rawValue) {
+            const normalized = (rawValue || '')
+                .toUpperCase()
+                .replace(/O/g, '0')
+                .replace(/Q/g, '0')
+                .replace(/I/g, '1')
+                .replace(/[^A-HJ-NPR-Z0-9]/g, '');
+            return getVinFromBarcode(normalized);
         }
 
         function getVinFromBarcode(rawValue) {
@@ -1761,6 +1797,41 @@
                         }
                     }
                 } catch (error) {}
+            }
+
+            try {
+                await loadVinOcrLibrary();
+                const canvas = state.vinScannerCanvas || document.createElement('canvas');
+                state.vinScannerCanvas = canvas;
+                const context = canvas.getContext('2d', { willReadFrequently: true });
+                const ocrRegions = [
+                    { x: 0, y: 0, w: video.videoWidth, h: video.videoHeight },
+                    { x: video.videoWidth * 0.12, y: video.videoHeight * 0.20, w: video.videoWidth * 0.76, h: video.videoHeight * 0.60 },
+                    { x: video.videoWidth * 0.25, y: video.videoHeight * 0.34, w: video.videoWidth * 0.50, h: video.videoHeight * 0.32 }
+                ];
+
+                for (const region of ocrRegions) {
+                    await new Promise(resolve => requestAnimationFrame(resolve));
+                    canvas.width = 1600;
+                    canvas.height = 900;
+                    context.fillStyle = '#fff';
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.drawImage(video, region.x, region.y, region.w, region.h, 0, 0, canvas.width, canvas.height);
+                    const ocr = await window.Tesseract.recognize(canvas, 'eng', {
+                        tessedit_char_whitelist: 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789'
+                    });
+                    const vin = getVinFromOcrText(ocr && ocr.data && ocr.data.text ? ocr.data.text : '');
+                    if (vin) {
+                        closeVinScanner();
+                        const input = document.getElementById('vin-input');
+                        input.value = vin;
+                        handleVinInput(vin);
+                        showToast('VIN read from label — decoding');
+                        return;
+                    }
+                }
+            } catch (error) {
+                status.textContent = 'VIN barcode not detected yet. Trying barcode and label text again…';
             }
 
             if (window.ZXing

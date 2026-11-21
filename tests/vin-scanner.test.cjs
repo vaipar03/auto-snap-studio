@@ -38,6 +38,13 @@ test('strips a leading Code 39 I prefix from the barcode payload', () => {
     assert.equal(getVinFromBarcode('I1HGCM82633A004352'), vin);
 });
 
+test('OCR normalizes common VIN misreads and extracts the printed VIN', () => {
+    assert.match(html, /function getVinFromOcrText/);
+    assert.match(html, /replace\(\/O\/g, '0'\)/);
+    assert.match(html, /replace\(\/I\/g, '1'\)/);
+    assert.match(html, /VIN_OCR_SCRIPT_URL/);
+});
+
 test('scanner prefers VIN barcode formats and keeps decode work lightweight', () => {
     assert.match(html, /POSSIBLE_FORMATS/);
     assert.match(html, /CODE_128/);
