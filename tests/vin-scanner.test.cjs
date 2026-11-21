@@ -43,6 +43,8 @@ test('OCR normalizes common VIN misreads and extracts the printed VIN', () => {
     assert.match(html, /replace\(\/O\/g, '0'\)/);
     assert.match(html, /replace\(\/I\/g, '1'\)/);
     assert.match(html, /VIN_OCR_SCRIPT_URL/);
+    assert.match(html, /canvas\.width = 2400/);
+    assert.match(html, /variants = \['normal', 'contrast', 'threshold'\]/);
 });
 
 test('scanner prefers VIN barcode formats and keeps decode work lightweight', () => {
@@ -67,4 +69,8 @@ test('VIN scanner includes three flashlight modes and landscape safe areas', () 
     assert.match(html, /env\(safe-area-inset-(top|bottom)/);
     assert.match(html, /handleVinScannerViewfinderTap/);
     assert.match(html, /applyVinScannerAutoFocus/);
+    assert.match(html, /id="vin-scanner-header"/);
+    assert.match(html, /id="vin-scanner-content"/);
+    assert.match(html, /id="vin-scanner-actions"/);
+    assert.match(html, /#vin-scanner-panel[\s\S]*?height:\s*calc\(100dvh/);
 });
